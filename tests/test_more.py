@@ -72,3 +72,17 @@ def test_stdlib_only():
             if mod not in sys.stdlib_module_names and mod not in ("pool", "tests"):
                 bad.append((p.name, mod))
     assert bad == []
+
+
+def test_finmind_token_4xx_falls_back(monkeypatch):
+    from pool import http as h
+    calls = []
+    def fake_json(self, url, params=None):
+        calls.append(dict(params or {}))
+        if params and "token" in params:
+            raise h.HttpStatus(403)
+        return {"status": 200, "data": [1]}
+    monkeypatch.setattr(h.Http, "json", fake_json)
+    c = h.Http(token="BAD")
+    assert c.finmind("X", None, "2026-01-01", "2026-01-02") == [1] and c.token_state == "invalid"
+    assert all("token" not in x for x in calls[1:])

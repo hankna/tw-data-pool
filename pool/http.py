@@ -20,6 +20,12 @@ MAX_BYTES = 8 * 1024 * 1024
 FINMIND = "https://api.finmindtrade.com/api/v4/data"
 
 
+class HttpStatus(SourceError):
+    def __init__(self, code, msg=""):
+        super().__init__(f"HTTP {code} {msg}".strip())
+        self.code = code
+
+
 class _NoCrossHost(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if urllib.parse.urlsplit(newurl).hostname != urllib.parse.urlsplit(req.full_url).hostname:
@@ -53,6 +59,11 @@ class Http:
                 return body
             except SourceError:
                 raise
+            except urllib.error.HTTPError as e:
+                if 400 <= e.code < 500 and e.code != 429:
+                    raise HttpStatus(e.code, host) from None     # 4xx 重試無益
+                last = e
+                time.sleep(2 * (i + 1))
             except Exception as e:  # noqa: BLE001
                 last = e
                 time.sleep(2 * (i + 1))
@@ -73,8 +84,12 @@ class Http:
         if data_id:
             p["data_id"] = data_id
         if self.token and self.token_state != "invalid":
-            j = self.json(FINMIND, {**p, "token": self.token})
-            if j.get("status") != 200 and "oken" in str(j.get("msg", "")):
+            try:
+                j = self.json(FINMIND, {**p, "token": self.token})
+                bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
+            except HttpStatus as e:
+                bad = e.code in (400, 401, 403)
+            if bad:
                 self.token_state = "invalid"   # 金鑰失效：本次改免金鑰
                 j = self.json(FINMIND, p)
         else:

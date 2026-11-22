@@ -23,8 +23,13 @@ def load_days(http, store: Store, today: dt.date, refresh: bool = False):
     rows = store.rows("tw_calendar")
     days = sorted(parse_date(r["date"]) for r in rows)
     if refresh or not cal_mod.enough(days, today):
-        days = cal_mod.fetch_days(http, today)
-        store.upsert("tw_calendar", [{"date": iso(d)} for d in days])
+        try:
+            days = cal_mod.fetch_days(http, today)
+            store.upsert("tw_calendar", [{"date": iso(d)} for d in days])
+        except Exception:  # noqa: BLE001
+            if not days:   # 完全沒有日曆：退而用「週一至週五」，國定假日會誤判，健康檢查會標註
+                days = [today - dt.timedelta(days=60) + dt.timedelta(days=i) for i in range(160)]
+                days = [d for d in days if d.weekday() < 5]
     return days
 
 
