@@ -1,0 +1,148 @@
+{
+  "_說明": "資料池項目目錄（唯一真相）。抓取程式、讀取程式、測試都只讀這個檔，不在程式裡另寫一份。改項目、來源順序、預計公布時間，只改這裡。",
+  "schema": "tw-data-pool/2",
+  "timezone": "Asia/Taipei",
+  "source_policy": "official_first",
+  "_source_policy_說明": "official_first＝交易所一手資料優先、FinMind 備援；finmind_first＝反過來。兩者都不使用媒體數字。個別項目可用 sources 的順序覆寫。",
+
+  "groups": {
+    "tw_close": "台股收盤後資料，目標日＝最近一個已收盤的台股交易日 D",
+    "tw_night": "台指期夜盤，目標＝最近一個已結束的夜盤（期交所歸屬於下一個交易日 N）",
+    "us_close": "美股收盤，目標日＝FinMind USStockPrice ^GSPC 的最新日期 U"
+  },
+
+  "items": {
+    "taiex": {
+      "group": "tw_close", "due": "14:10", "key": true,
+      "sources": ["FinMind:TaiwanStockPrice?data_id=TAIEX", "TWSE:MI_INDEX(type=IND)+FMTQIK+MI_5MINS_HIST"],
+      "xcheck": {"with": "TWSE:MI_INDEX(type=IND)", "field": "close", "tol": 0.01},
+      "fields": {"open": "點", "high": "點", "low": "點", "close": "點", "chg": "點", "chg_pct": "%", "turnover_bn": "億元＝Trading_money÷1e8"},
+      "valid": {"close": [5000, 100000], "abs_chg_pct_max": 10.5, "turnover_bn_min": 100},
+      "note": "不得使用證交所 MI_5MINS、MI_5MINS_INDEX 兩個端點（既有規定）；MI_5MINS_HIST 為歷史開高低收，既有程式已在用，可用。"
+    },
+    "tpex": {
+      "group": "tw_close", "due": "14:30",
+      "sources": ["FinMind:TaiwanStockPrice?data_id=TPEx", "TPEx:openapi/v1/tpex_index"],
+      "fields": {"close": "點", "chg_pct": "%"}
+    },
+    "inst_spot": {
+      "group": "tw_close", "due": "15:15", "key": true,
+      "sources": ["TWSE:BFI82U", "FinMind:TaiwanStockTotalInstitutionalInvestors"],
+      "xcheck": {"field": "total_bn", "tol": 0.01},
+      "fields": {"foreign_bn": "外資及陸資＋外資自營商", "trust_bn": "投信", "dealer_bn": "自營商自行＋避險", "dealer_self_bn": "", "dealer_hedge_bn": "", "total_bn": "合計；一律億元＝（買−賣）÷1e8"},
+      "valid": {"sum_rule": "foreign_bn+trust_bn+dealer_bn 與 total_bn 相差不得超過 0.02"}
+    },
+    "fut_inst": {
+      "group": "tw_close", "due": "15:30", "key": true,
+      "sources": ["TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFuturesContractsBytheDate", "FinMind:TaiwanFuturesInstitutionalInvestors?data_id=TX"],
+      "xcheck": {"field": "foreign.net_oi", "tol": 0},
+      "fields": {"foreign|trust|dealer": {"net_oi": "口＝多方未平倉口數−空方未平倉口數（只算臺股期貨 TX）", "chg": "口，對前一交易日"}},
+      "note": "OpenAPI 只給最新一日：回傳 Date 不等於 D 就視為尚未公布，改用下一個來源。chg 需要前一日值，取自 series/fut_oi.csv。"
+    },
+    "opt_inst": {
+      "group": "tw_close", "due": "15:30",
+      "sources": ["TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfCallsAndPutsBytheDate", "FinMind:TaiwanOptionInstitutionalInvestors?data_id=TXO"],
+      "fields": {"foreign": {"call_net_oi": "口", "put_net_oi": "口", "call_net_oi_amt_k": "千元", "put_net_oi_amt_k": "千元"}},
+      "note": "只取臺指選擇權、外資。"
+    },
+    "tx_day": {
+      "group": "tw_close", "due": "15:30",
+      "sources": ["TAIFEX:futDataDown(交易時段=一般)", "FinMind:TaiwanFuturesDaily?data_id=TX(trading_session=position)"],
+      "fields": {"contract": "近月＝到期月份為 6 碼、不含「/」、成交量>0 之中最小者", "open": "", "high": "", "low": "", "close": "", "settle": "", "chg": "", "volume": "口", "oi": "口", "basis": "close−taiex.close"}
+    },
+    "txo_oi": {
+      "group": "tw_close", "due": "16:00", "key": true,
+      "sources": ["FinMind:TaiwanOptionDaily?data_id=TXO(trading_session=position)", "TAIFEX:optDataDown"],
+      "xcheck": {"with": "pc_ratio", "field": "oi_sum_excl_expiring", "tol": 0},
+      "fields": {"expiring_today": "當日到期的契約代號清單（排除不計）", "monthly": "最近月選（6 碼）", "weekly": "最近一個未到期週選（含 W 或 F）", "top": "各契約買權、賣權未平倉前三名 [履約價, 口數]"},
+      "rule": "當日到期契約一律排除：最大未平倉與自算的賣權買權未平倉比都不含它。實測 2026-11-20：含當日到期的 202611F3 算出 40.38%，排除後 30.05%，與期交所公布值完全相同。",
+      "expiry_rule": "月選：到期月第三個週三。W 週選：該週週三。F 週選：該週週五。遇休市順延，以交易日曆為準；判不出來時用『該契約在下一交易日的資料是否仍存在』反推。"
+    },
+    "pc_ratio": {
+      "group": "tw_close", "due": "16:00", "key": true,
+      "sources": ["TAIFEX:openapi/PutCallRatio", "derived:txo_oi（排除當日到期）"],
+      "fields": {"oi_pct": "賣權未平倉÷買權未平倉×100", "vol_pct": "", "put_oi": "口", "call_oi": "口"}
+    },
+    "large_traders": {
+      "group": "tw_close", "due": "16:30",
+      "sources": ["TAIFEX:openapi/OpenInterestOfLargeTradersFutures"],
+      "fields": {"scope": "Contract=TX（臺股期貨 TX+MTX/4）、SettlementMonth=999912（全部月份）", "all": "TypeOfTraders=0：前五大、前十大買方與賣方口數", "specific": "TypeOfTraders=1：特定法人", "market_oi": "口"},
+      "note": "FinMind 的十大交易人資料集需 sponsor 金鑰，官方 OpenAPI 免金鑰。"
+    },
+    "vix": {
+      "group": "tw_close", "due": "14:30", "key": true,
+      "sources": ["TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt", "FinMind:TaiwanOptionVix（需有效金鑰）"],
+      "fields": {"close": "13:45 最後一筆", "close_1min_avg": "收盤前 1 分鐘平均", "chg": "對前一交易日 close"},
+      "note": "官方月檔為 Big5、Tab 分隔，前兩列是表頭與分隔線。月初第一個交易日前，新月份檔可能不存在，改讀上月檔取前一日值。"
+    },
+    "margin": {
+      "group": "tw_close", "due": "21:20", "key": true,
+      "sources": ["TWSE:MI_MARGN(selectType=MS)", "FinMind:TaiwanStockTotalMarginPurchaseShortSale"],
+      "xcheck": {"field": "balance_bn", "tol": 0.01},
+      "fields": {"balance_bn": "融資金額今日餘額，億元", "chg_bn": "今日−前日，億元", "short_balance": "融券今日餘額，交易單位", "short_chg": ""},
+      "note": "單位陷阱：證交所為仟元（÷1e5 得億元），FinMind MarginPurchaseMoney 為元（÷1e8 得億元）。"
+    },
+    "usd_twd": {
+      "group": "tw_close", "due": "16:30",
+      "sources": ["FinMind:TaiwanExchangeRate?data_id=USD"],
+      "fields": {"spot_buy": "", "spot_sell": "", "mid": "（買＋賣）÷2"},
+      "label": "臺灣銀行牌告即期匯率，不是台北外匯經紀公司的收盤價；報告引用時要照這個名稱寫，兩者會差幾分錢。"
+    },
+    "tx_night": {
+      "group": "tw_night", "due": "05:10", "key": true,
+      "sources": ["TAIFEX:futDataDown(交易時段=盤後，查詢日=N)", "FinMind:TaiwanFuturesDaily?data_id=TX(trading_session=after_market，date=N)"],
+      "fields": {"trading_date": "N（歸屬交易日）", "session": "實際時段，例如 11/20 15:00～11/21 05:00", "contract": "", "open": "", "high": "", "low": "", "close": "", "chg": "對前一日盤結算價", "chg_pct": "", "volume": ""},
+      "rule": "期交所把夜盤記在下一個交易日。實測：週五 11/20 晚上的夜盤，要用查詢日 2026/11/23 才取得（FinMind 週日仍未收錄）。N 由交易日曆決定，不能用『隔天』。"
+    },
+    "us_index": {
+      "group": "us_close", "due": "06:05",
+      "sources": ["FinMind:USStockPrice?data_id=^GSPC,^IXIC,^DJI,^SOX"],
+      "fields": {"close": "", "chg_pct": "對前一筆 Close"}
+    },
+    "us_stock": {
+      "group": "us_close", "due": "06:05",
+      "sources": ["FinMind:USStockPrice?data_id=NVDA,TSM,AMD,AVGO,MU"],
+      "fields": {"close": "美元", "chg_pct": ""}
+    },
+    "us_vix": {
+      "group": "us_close", "due": "06:05",
+      "sources": ["FinMind:USStockPrice?data_id=^VIX"],
+      "fields": {"close": "", "chg": ""}
+    },
+    "us_yield": {
+      "group": "us_close", "due": "06:05",
+      "sources": ["FinMind:GovernmentBondsYield?data_id=United States 10-Year,United States 2-Year"],
+      "fields": {"y10": "%", "y2": "%", "y10_chg_bp": "", "y2_chg_bp": ""}
+    }
+  },
+
+  "derived": {
+    "rv20_annual_pct": "最近 20 個日報酬率（%）的樣本標準差 × √252；來源 series/taiex_daily.csv",
+    "sigma1_rv_pts": "taiex.close × rv20_annual_pct ÷ 100 ÷ √252",
+    "sigma1_vix_pts": "taiex.close × vix.close ÷ 100 ÷ √252（vix 不是 ok 就不輸出）",
+    "closes_7": "最近 7 個交易日收盤 [日期, 收盤]",
+    "_不做": "8 成區間、k 值、費波那契刻度、情境機率屬於各報告的研判，不放進資料池。"
+  },
+
+  "profiles": {
+    "_說明": "各報告需要的項目與日期。tw 欄位：prev＝報告日之前最近一個交易日；today＝報告日當天。night：latest＝最近一個已結束的夜盤。",
+    "ustw":     {"report": "美台股市現況策略 05:37", "tw": "prev",  "night": "latest", "need": ["tx_night", "us_index", "us_stock", "us_vix", "us_yield", "taiex", "inst_spot", "fut_inst", "txo_oi", "pc_ratio", "margin", "usd_twd", "vix"]},
+    "chaodilu": {"report": "朝邸錄 06:15",           "tw": "prev",  "night": "latest", "need": ["tx_night", "us_index", "us_stock", "us_vix", "us_yield", "taiex", "tpex", "inst_spot", "fut_inst", "opt_inst", "txo_oi", "pc_ratio", "large_traders", "margin", "usd_twd", "vix"]},
+    "midday":   {"report": "盤中策略簡報 11:12",     "tw": "prev",  "night": "latest", "need": ["taiex", "txo_oi", "pc_ratio", "fut_inst", "vix", "tx_night"]},
+    "panhou":   {"report": "盤後總覽 18:23",         "tw": "today", "night": "none",   "need": ["taiex", "tpex", "inst_spot", "fut_inst", "opt_inst", "tx_day", "txo_oi", "pc_ratio", "large_traders", "vix", "usd_twd", "margin"], "allow_prev": ["margin"]}
+  },
+
+  "ticks": {
+    "_說明": "GitHub Actions 排程（台灣時間）。每次執行做同一件事：把『已到預計公布時間、但還不是 ok』的項目補齊。時間是初估，上線兩週後依 series/availability.csv 校正。",
+    "tue_to_sat": ["05:12", "06:02", "06:32"],
+    "mon_to_fri": ["14:12", "15:22", "16:17", "17:32", "21:22", "21:52"]
+  },
+
+  "retention": {
+    "daily_keep": 5,
+    "run_log_rows": 300,
+    "availability_days": 60,
+    "series": "只追加；每年 1 月把前一年搬到 series/archive/YYYY/",
+    "data_branch_history": "每週日壓成單一 commit"
+  }
+}

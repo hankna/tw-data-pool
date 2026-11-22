@@ -1,199 +1,220 @@
-# tw-data-pool 架構規格 v1.0（2026-11-22，Opus 5.5 設計）
+# tw-data-pool 架構規格 v2.0
 
-> 用途：每日共用資料池。資料只抓一次，所有報告先讀資料池，缺的項目才各自補抓。
-> 本文件是建置依據，建置者照第 9 節工單逐項做，不自行改架構。
+2026-11-22，Fable 5.2 設計。v1.0（同日 Opus 5.5）的假設經實測修正，差異見第 12 節。
+本文件是建置依據；建置者照第 10 節工單做，不改架構。項目、來源、時間的唯一真相是 `pool/catalog.json`。
 
-## 1. 問題與目標
+## 1. 目標
 
-| 現況 | 問題 |
-|---|---|
-| 美台 05:37、朝邸錄 06:15、盤中 11:12、盤後總覽 18:23 各自從 Drive 下載「戰略情報哨_tw_data.py」執行 | 同一份資料一天抓 4 次以上 |
-| 該程式用不帶金鑰的 FinMind | 免金鑰額度低，常回 402，要等 65 秒重試，拖慢報告 |
-| 台指 VIX 官方頁數值在下載檔裡、搜尋抓不到 | 報告常整項刪除 |
-| 每份報告各抓各的 | 同一天不同報告的數字可能不一致 |
+每個資料時點只抓一次，四份每日報告改讀資料池；同一天各報告的數字完全一致；舊資料自動淘汰；資料池故障時報告照常出刊。
 
-目標：
-1. 每個資料時點只抓一次，報告改讀資料池。
-2. 用 repo 內的 FinMind sponsor 金鑰（Secret `FINMIND_TOKEN`），解決 402 與 VIX。
-3. 舊資料依「份數」自動刪除，git 歷史每週壓縮，不累積垃圾。
-4. 資料池壞掉時，報告自動退回原本的抓法，不會開天窗。
+## 2. 實測結論（2026-11-22，GitHub Actions 與雲端工作階段各測一次）
 
-## 2. 架構總覽
-
-```
-GitHub Actions（tw-data-pool，cron）
-   └─ fetch/pool_fetch.py（FinMind 有金鑰為主，官方網站備援）
-        └─ 寫入 data 分支 ─┬─ latest/         各資料集最新一份＋manifest.json
-                           ├─ daily/YYYY-MM-DD/ 原始快照（保留最近 5 個交易日）
-                           ├─ series/          長期時間序列 CSV（只追加、不刪）
-                           └─ logs/run_log.csv  執行紀錄（保留 60 列）
-報告排程（雲端 Claude）
-   └─ add_repo tw-data-pool（read）→ tools/pool_read.py → pool.json
-        └─ 缺項或過期 → 退回原方法（戰略情報哨_tw_data.py／WebSearch），並記「資料池缺 X」
-東京主機（tw-index-forecast）
-   └─ midday_latest.json、day_path_latest.json 照舊放 Drive，資料池不重抓，只在 manifest 記指標
-```
-
-設計取捨：
-- 抓取放 GitHub Actions、不放東京主機：主機已有盤中與全日路徑，改主機要走 SSH 與協調頁流程，風險較高；Actions 與主機互相獨立，任一邊壞掉另一邊照常。主機與資料池仍有部分重複抓取（主機自己的 FinMind 日資料），列為第二期整併（第 10 節）。
-- 資料放 git 的 `data` 孤兒分支、不放 main：main 只放程式與文件，資料歷史每週壓縮不影響程式歷史。
-- 盤中資料不進資料池：盤中以主機快照為準，避免兩套盤中數字。
-
-## 3. 更新時點（台灣時間，交易日）
-
-GitHub Actions 的 cron 常延遲 5～20 分鐘，所以排程時間都比報告提早，報告一律檢查 `asof`。
-
-| 編號 | 排程 | 抓什麼 | 供誰 |
-|---|---|---|---|
-| R1 | 05:08 | 台指期夜盤收盤、前一交易日台股收盤籌碼（補漏） | 美台 05:37 |
-| R2 | 06:00 | 美股收盤（USStockPrice）、美債殖利率（GovernmentBondsYield）；FinMind 美股約 06:00 後更新，未更新的項目標 `pending` | 朝邸錄 06:15 |
-| R3 | 16:40 | 加權／櫃買收盤、三大法人現貨、外資期貨與選擇權未平倉、台指期日盤、選擇權逐履約價未平倉、P/C 比、台指 VIX、新台幣 | 盤後總覽 18:23 |
-| R4 | 21:35 | 融資融券、R3 當時尚未更新的項目重抓 | 紅隊推演 21:40、逐日研判 22:47 |
-
-- 週六 R1、R2 也跑（對應週五夜盤與美股）。
-- 非交易日判斷：先查 FinMind `TaiwanStockTradingDate`；不是交易日只寫 manifest `skip`，不抓資料（週六 R1、R2 例外，以「前一交易日」判斷）。
-- 手動補抓：workflow_dispatch，可帶 `run_id`（R1～R4）與 `date`。
-- 盤中 11:12：不抓。manifest 記主機 `midday_latest.json` 的 Drive 位置，報告照舊讀主機快照。
-
-## 4. 目錄與檔案契約
-
-### 4.1 data 分支目錄
-
-```
-latest/manifest.json
-latest/tw_close.json      R3／R4 產出
-latest/tw_night.json      R1 產出
-latest/us_close.json      R2 產出
-latest/vix.json           R3 產出
-daily/2026-11-24/{同上檔名}.json
-series/taiex_daily.csv    date,open,high,low,close,turnover_bn
-series/inst_daily.csv     date,foreign_bn,trust_bn,dealer_bn
-series/fut_oi.csv         date,foreign_tx_net_oi,foreign_tx_net_chg
-series/opt_pc.csv         date,pc_oi_ratio,pc_vol_ratio
-series/vix_daily.csv      date,close,close_1min_avg
-series/margin_daily.csv   date,margin_bal_bn,margin_chg_bn,short_bal,short_chg
-logs/run_log.csv          run_at,run_id,data_date,ok,partial,missing,seconds,note
-```
-
-### 4.2 每個資料檔的共同格式
-
-```json
-{
-  "schema": "tw-data-pool/1",
-  "dataset": "tw_close",
-  "data_date": "2026-11-24",
-  "fetched_at": "2026-11-24T16:42:10+08:00",
-  "run_id": "R3",
-  "status": "ok | partial | missing",
-  "items": {
-    "taiex": {"value": {...}, "source": "FinMind:TaiwanStockPrice", "status": "ok"},
-    "margin": {"value": null, "source": null, "status": "pending", "note": "21:35 再抓"}
-  }
-}
-```
-
-- `items.*.status` 只能是 `ok`、`pending`（還沒公布，之後會補）、`missing`（試過所有來源都失敗）。
-- `source` 寫實際來源：`FinMind:資料集名稱` 或 `TWSE:端點`、`TAIFEX:端點`。
-- 數值單位固定：金額億元（`_bn`）、口數整數、指數保留 2 位小數。
-
-### 4.3 manifest.json
-
-```json
-{
-  "schema": "tw-data-pool/1",
-  "updated_at": "...",
-  "trading_day": "2026-11-24",
-  "prev_trading_day": "2026-11-21",
-  "datasets": {
-    "tw_close": {"data_date": "2026-11-24", "status": "partial", "run_id": "R3", "pending": ["margin"]},
-    "us_close": {"data_date": "2026-11-21", "status": "ok", "run_id": "R2"}
-  },
-  "host_files": {
-    "midday_latest": {"drive_folder": "1S4MGrO90HWCM_9sUZwaH8mghBotXkwrT", "title": "midday_latest.json"},
-    "day_path_latest": {"drive_folder": "1S4MGrO90HWCM_9sUZwaH8mghBotXkwrT", "title": "day_path_latest.json"}
-  }
-}
-```
-
-## 5. 項目對照（資料池負責的範圍）
-
-| 項目 | 主來源（有金鑰） | 備援 | 檔案 |
-|---|---|---|---|
-| 加權指數 OHLC、成交值 | FinMind TaiwanStockPrice TAIEX | TWSE MI_INDEX、FMTQIK | tw_close |
-| 櫃買指數 | FinMind（資料集名稱建置時查官方文件確認） | TPEx openapi | tw_close |
-| 三大法人現貨 | TaiwanStockTotalInstitutionalInvestors | TWSE BFI82U | tw_close |
-| 外資台指期淨未平倉 | TaiwanFuturesInstitutionalInvestors TX | TAIFEX futContractsDateDown | tw_close |
-| 外資選擇權買賣權淨部位 | TaiwanOptionInstitutionalInvestors TXO | TAIFEX callsAndPutsDateDown | tw_close |
-| 台指期日盤、夜盤 | TaiwanFuturesDaily TX（trading_session） | TAIFEX futDataDown | tw_close／tw_night |
-| 選擇權最大未平倉前三、P/C 比 | TaiwanOptionDaily TXO（position） | TAIFEX optDataDown、pcRatio | tw_close |
-| 十大交易人 | TaiwanFuturesOpenInterestLargeTraders（有金鑰可試） | 無 | tw_close |
-| 台指 VIX | TaiwanOptionVix | TAIFEX vixDaily3MNew 月檔下載 | vix |
-| 融資融券 | TaiwanStockTotalMarginPurchaseShortSale | TWSE MI_MARGN | tw_close（R4） |
-| 新台幣 | TaiwanExchangeRate USD | 無 | tw_close |
-| 美股 | USStockPrice ^GSPC ^IXIC ^DJI ^SOX NVDA TSM AMD AVGO MU | 無（報告自行外搜） | us_close |
-| 美債殖利率 | GovernmentBondsYield 2Y、10Y | 無 | us_close |
-
-所有 FinMind 資料集名稱，B1 建置時先對照官方文件（https://finmind.github.io/）實測，名稱不符就改成正確名稱並更新本表，不要猜。
-
-不在範圍（報告照舊外搜）：美國 VIX、比特幣、原油黃金即時價、新聞事件、Apollo、SemiAnalysis。
-
-## 6. 報告讀取規則（寫進每份報告的提示詞）
-
-1. 開工先 `add_repo` 掛 `hankna/tw-data-pool`（access read），淺層複製 main，執行
-   `python3 -I tools/pool_read.py --date 資料日 --need tw_close,vix > pool.json`。
-   `pool_read.py` 用 `gh api repos/hankna/tw-data-pool/contents/...?ref=data` 讀檔，不需複製 data 分支。
-2. 判讀：`data_date` 等於預期資料日、`status=ok` 的項目直接使用，報告來源寫「資料池（原始來源：FinMind:…）」。
-3. `pending`、`missing`、日期不符、整個讀取失敗：只對這些項目退回原方法（戰略情報哨_tw_data.py、WebSearch），並在資料來源狀態寫一行「資料池缺：項目（原因）」。
-4. 禁止：報告自行重抓資料池已有且 ok 的項目；報告寫入資料池。
-
-## 7. 保留與清理
-
-| 區域 | 規則 | 理由 |
+| 項目 | 結果 | 對設計的影響 |
 |---|---|---|
-| daily/ | 只保留日期最新 5 個資料夾，每次執行後清理 | 依份數不依日曆天，春節長假不會被清空 |
-| latest/ | 永遠覆蓋 | 只有最新一份 |
-| series/ | 只追加、不刪；每年 1/1 把前一年移到 `series/archive/YYYY/` | 指標計算需要長期序列，一年約 50KB，可忽略 |
-| logs/run_log.csv | 保留最近 60 列 | 約 3 週紀錄，夠查問題 |
-| git 歷史 | 每週日 03:17 把 data 分支壓成單一 commit 後強制推送 | 真正釋放 .git 空間；讀取端不依賴歷史 |
+| repo 內的 `FINMIND_TOKEN` | 失效，FinMind 回「Token is illegal」 | 資料池不能依賴金鑰；金鑰改為選用 |
+| 交易所官方端點（證交所、期交所、櫃買，含 OpenAPI） | 從 GitHub Actions 全部連得上，0.1～3 秒 | 一手資料可當主來源，免金鑰、無額度 |
+| 台指 VIX | 找到官方月檔固定網址 `…/vix/log2data/YYYYMMnew.txt`，652 bytes | 報告長期取不到 VIX 的問題解決 |
+| FinMind 免金鑰 | 範圍內資料集都可用；只有台指 VIX、十大交易人需要 sponsor | 這兩項改走官方 |
+| 夜盤歸屬 | 週五晚上的夜盤記在下週一（11/23），期交所已可取得，FinMind 尚未收錄 | 夜盤以期交所為主 |
+| 賣權買權未平倉比 | 含當日到期契約算出 40.38%，排除後 30.05%，與期交所公布值完全相同 | 當日到期契約一律排除（現行抓取程式沒排除，見第 11 節） |
+| 融資金額單位 | 證交所仟元、FinMind 元 | 寫進目錄，測試鎖住 |
+| FinMind 與官方交叉比對 | 加權指數、三大法人、外資期貨淨未平倉、融資餘額四項完全一致 | 雙來源互為備援可行 |
+| 手動觸發 workflow | 雲端工作階段可以呼叫 dispatch | 補抓不必進 GitHub 網頁 |
 
-並行保護：所有 workflow 用同一個 `concurrency: group: data-branch`，避免壓縮與抓取同時寫入。
+## 3. 架構
 
-## 8. 檢核與監控
+```
+GitHub Actions（每天 9 次，見第 5 節）
+  └─ python -m pool.run            對帳式抓取：只補「該有而還沒有」的項目
+       ├─ 來源鏈：官方一手 → FinMind → 標記 missing
+       ├─ 檢核、雙來源比對、衍生值
+       └─ 寫入 data 分支
+            latest/digest.json     給報告讀的精簡檔（實測 4.5 KB）
+            daily/YYYY-MM-DD/      當日 digest 留底（最近 5 份）
+            series/*.csv           長期序列（只追加）
+            logs/                  執行紀錄、公布時間紀錄、健康狀態
 
-寫入前檢查（不過就該項標 `missing`，不寫入錯值）：
-- 日期：每項資料日等於預期交易日。
-- 範圍：加權指數單日漲跌超過 ±10%、成交值為 0、未平倉為負，視為異常。
-- 一致：三大法人合計與各項加總差距不超過 1 億元。
-- 重複：同一 data_date 已是 ok 的項目，R4 不覆蓋（只補 pending／missing）。
+報告排程（雲端 Claude）
+  └─ python3 -I tools/pool_read.py --profile <報告>      一個指令
+       ├─ 命中：直接輸出 digest 的所需項目
+       └─ 缺項或過期：同一支程式當場直接抓（讀穿式快取），輸出格式相同
+```
 
-監控：
-- 每次執行結果寫 `logs/run_log.csv`。
-- 單次 `missing` 不通知（報告會自動備援）；同一項目連續 2 個交易日 `missing`，或 workflow 失敗，用 GitHub Actions 失敗通知（寄 Hank 信箱），並由每週稽核排程列入。
-- 金鑰只在 Secret；log 與 JSON 不得出現金鑰（沿用舊 workflow 的 scrub 做法）。
+四個設計原則：
 
-## 9. 建置工單（照順序，建置階段用 Sonnet 5.5）
+1. **對帳式抓取**。每次執行都問同一個問題：依目錄的預計公布時間，現在應該有哪些項目，哪些還不是 ok。只抓缺的。重跑不產生差異，漏跑一次由下一次補上，不需要為每個時段寫不同邏輯。
+2. **讀穿式快取**。GitHub 排程會延遲，資料池難免有沒趕上的時候。讀取程式發現缺項時用同一套來源程式直接抓，報告端永遠只下一個指令，不再由 Claude 逐項手動查。
+3. **定義只寫一次**。每個數字的算法（近月怎麼選、哪些契約排除、單位）寫在目錄與程式，報告不再各自加總。
+4. **官方一手優先**。交易所端點免金鑰、無額度、公布最早。FinMind 作備援並用來交叉比對。兩者都不是媒體數字，2026-11-17「不用媒體數字」的原則不變；順序由 `catalog.json` 的 `source_policy` 一個設定值決定。
+
+為什麼不放東京主機：主機 18:10 才跑每日流程，趕不上清晨與盤後報告；主機的抓取程式綁著 V3.4 驗收雜湊，不宜為報告需求改動。兩邊獨立，一邊故障不影響另一邊。主機整併列在第二期。
+
+## 4. 資料契約
+
+### 4.1 digest.json（schema `tw-data-pool/2`）
+
+完整範例是 `tests/golden/digest_2026-11-20.json`（真實數字）。結構：
+
+```json
+{
+  "schema": "tw-data-pool/2",
+  "generated_at": "2026-11-21T06:35:00+08:00",
+  "snapshot_id": "8 碼，items 與 derived 正規化後的 sha256 前 8 碼",
+  "calendar": {"tw_last": "2026-11-20", "tw_prev": "2026-11-19", "tw_next": "2026-11-23", "us_last": "2026-11-20"},
+  "items": {
+    "taiex": {"asof": "2026-11-20", "status": "ok", "src": "FinMind:TaiwanStockPrice", "xcheck": "match", "v": {"close": 36033.29, "…": "…"}}
+  },
+  "derived": {"rv20_annual_pct": 48.97, "sigma1_rv_pts": 1111.7, "sigma1_vix_pts": 1183.3, "closes_7": []},
+  "health": {"alert": false, "token": "none|valid|invalid", "notes": []}
+}
+```
+
+- `status`：`ok`、`pending`（還沒到預計公布時間，或來源尚未公布）、`missing`（已過預計時間、所有來源都失敗）、`conflict`（兩個來源不一致；`v` 取官方值，`alt` 記另一來源的值）。
+- `asof` 是資料日，不是抓取時間。各項目的 `asof` 可以不同（例如盤後 18:23 時融資還是前一日），報告依 `asof` 標示日期。
+- `snapshot_id`：報告在資料來源狀態寫「資料池快照 xxxxxxxx」，日後對帳可以還原當時讀到的版本（`daily/` 留底）。
+- 數值單位固定：金額億元（欄名結尾 `_bn`）、口數整數、指數與價格保留原始小數。
+
+### 4.2 項目與來源
+
+16 個項目的來源順序、欄位、單位、檢核範圍、預計公布時間全部在 `pool/catalog.json`。重點定義：
+
+| 項目 | 主來源 | 備援 | 容易錯的地方 |
+|---|---|---|---|
+| taiex、tpex | FinMind | 證交所、櫃買 | 收盤與證交所 MI_INDEX 比對 |
+| inst_spot 三大法人 | 證交所 BFI82U | FinMind | 外資含外資自營；自營含避險 |
+| fut_inst、opt_inst | 期交所 OpenAPI | FinMind | OpenAPI 只給最新一日，要核對 Date |
+| tx_day、tx_night | 期交所 futDataDown | FinMind | 夜盤歸屬下一個交易日；近月取 6 碼最小者 |
+| txo_oi | FinMind（逐履約價） | 期交所 optDataDown | 排除當日到期契約；週選有 W（週三）與 F（週五）兩種 |
+| pc_ratio | 期交所 OpenAPI | 由 txo_oi 自算 | 兩者必須相等，當作 txo_oi 的檢核 |
+| large_traders | 期交所 OpenAPI | 無 | 取 TX、全部月份（999912） |
+| vix | 期交所月檔 | FinMind（需金鑰） | Big5、Tab 分隔 |
+| margin | 證交所 MI_MARGN | FinMind | 單位仟元與元 |
+| usd_twd | FinMind | 無 | 這是臺銀牌告，不是台北外匯經紀收盤價 |
+| us_index、us_stock、us_vix、us_yield | FinMind | 無（報告自行外搜） | 台灣 06:00 後才更新 |
+
+不在範圍：盤中資料（照舊讀主機快照 `midday_latest.json`、`day_path_latest.json`）、新聞與事件、原油黃金比特幣、Apollo、SemiAnalysis、個股。
+
+### 4.3 data 分支目錄
+
+```
+latest/digest.json
+daily/2026-11-20/digest.json            每次有變動就覆蓋當日這一份
+series/taiex_daily.csv                  date,open,high,low,close,turnover_bn
+series/inst_daily.csv                   date,foreign_bn,trust_bn,dealer_bn,total_bn
+series/fut_oi.csv                       date,foreign_net_oi,trust_net_oi,dealer_net_oi
+series/opt_pc.csv                       date,pc_oi_pct,pc_vol_pct,put_oi,call_oi
+series/vix_daily.csv                    date,close,close_1min_avg
+series/margin_daily.csv                 date,balance_bn,short_balance
+series/tw_calendar.csv                  date（交易日；每週更新）
+series/availability.csv                 date,item,first_ok_at,src（最近 60 天）
+logs/run_log.csv                        run_at,trigger,scheduled_for,delay_min,filled,pending,missing,conflict,seconds,note
+logs/health.json                        每週產生：各項目公布時間分布、排程延遲分布、建議調整
+```
+
+## 5. 執行時點（台灣時間）
+
+| 時點 | 星期 | 這時通常補得到 | 趕上哪份報告 |
+|---|---|---|---|
+| 05:12 | 二～六 | 夜盤收盤；順便重抓前一日的關鍵項目，偵測修訂 | 美台 05:37 |
+| 06:02、06:32 | 二～六 | 美股收盤、美債殖利率 | 朝邸錄 06:15 |
+| 14:12 | 一～五 | 加權、櫃買、台指 VIX | — |
+| 15:22 | 一～五 | 三大法人現貨、期貨與選擇權法人、台指期日盤 | — |
+| 16:17 | 一～五 | 逐履約價未平倉、賣權買權比、大額交易人、匯率 | — |
+| 17:32 | 一～五 | 前面漏掉的全部補齊 | 盤後總覽 18:23 |
+| 21:22、21:52 | 一～五 | 融資融券 | 紅隊、逐日研判 |
+
+- 各項目的預計公布時間是初估。每次首次取得的時間寫進 `series/availability.csv`，每週日的維護工作算出各項目第 90 百分位的公布時間與排程延遲，寫進 `logs/health.json` 並列出建議的時點調整。調整由人（或 Claude）改 `catalog.json`，程式不自動改排程。
+- 05:12 與 06:02 離報告很近，排程延遲時趕不上屬於預期內；報告端的讀穿機制補這個缺口。
+- 交易日判斷用 `series/tw_calendar.csv`（來源 FinMind TaiwanStockTradingDate，每週更新）。非交易日執行時只寫一列紀錄。
+- 手動補抓：dispatch `pool.yml`，可帶 `date`、`items`、`force`。
+
+## 6. 報告怎麼讀
+
+每份報告的提示詞把現有的「資料來源規則」「台股資料抓取程式」「FinMind 請求上限」等段落刪掉，換成 `docs/REPORT_SNIPPET.md` 的短段落。核心只有三步：
+
+1. `add_repo` 掛 `hankna/tw-data-pool`（read），淺層複製。
+2. `python3 -I tw-data-pool/tools/pool_read.py --profile <代號> --date <報告日> --out pool.json`
+3. 讀程式印出的摘要表與 `pool.json`。`ok` 的項目直接用；`missing` 的項目才用 WebSearch 或 web-fetch 子代理，並在資料來源狀態寫一行。
+
+讀取程式的行為：
+
+- 用 `gh api`（raw）讀 data 分支的 `latest/digest.json`；失敗改用 `git fetch --depth 1 origin data`。
+- 依 profile 判斷每個項目的 `asof` 是否符合報告需要的日期。不符合、`pending`、`missing`，或整份 digest 的 `generated_at` 超過 26 小時，就對這些項目啟動讀穿：匯入 `pool/` 的來源程式直接抓，結果標 `via: direct`。
+- 結束碼：0＝全部來自資料池；1＝部分讀穿補齊；2＝仍有缺項；3＝完全失敗（報告退回現行做法）。
+- 報告不寫入資料池，也不重抓 `ok` 的項目。
+
+`health.alert` 為 true（關鍵項目在最後一個時點後仍缺、連續兩個交易日同一項目缺、或 digest 過期）時，只有朝邸錄與盤後總覽兩份報告在寄信後各傳一則簡訊，其他報告不傳。
+
+## 7. 品質機制
+
+| 機制 | 做法 |
+|---|---|
+| 寫入前檢核 | 日期等於目標日；數值在目錄的 `valid` 範圍；三大法人分項加總等於合計；未平倉非負。不過就不寫，該項標 `missing` |
+| 雙來源比對 | 標 `key` 的 7 個項目，兩個來源都取得時比對；差異超過容許值標 `conflict`，取官方值並留下另一值 |
+| 內部一致 | `txo_oi` 排除當日到期後的加總必須等於 `pc_ratio` 的口數 |
+| 修訂偵測 | 隔天 05:12 重抓前一日關鍵項目；有變動就更新、`rev` 加一、寫進 run_log |
+| 來源可追 | 每個值帶 `src` 與 `asof`；報告帶 `snapshot_id` |
+| 測試 | `tests/fixtures/2026-11-20/` 是當天各來源的真實回應；`tests/golden/digest_2026-11-20.json` 是獨立計算的標準答案。解析、衍生、到期契約排除、單位換算都以它為準 |
+| 金鑰 | 選用。有效就帶上（額度較高）；失效就當次改免金鑰並把 `health.token` 標 `invalid`。任何輸出不得含金鑰 |
+| 連線 | 單一傳輸模組：只允許清單內的網域、逾時 40 秒、重試 2 次、回應上限 8 MB、不跟隨跨網域轉址 |
+
+## 8. 保留與清理
+
+| 對象 | 規則 |
+|---|---|
+| `daily/` | 留最近 5 份（依份數，長假不會被清空） |
+| `series/` | 只追加；每年 1 月把前一年搬到 `series/archive/YYYY/` |
+| `availability.csv` | 留 60 天 |
+| `run_log.csv` | 留 300 列（約 6 週） |
+| data 分支歷史 | 每週日 03:17 壓成單一 commit 後強制推送；平日保留歷史當作一週內的復原點 |
+| 分支 | 只留 `main` 與 `data`；功能分支合併後刪除 |
+| 一次性檔案 | 實測用的 `probe.yml` 與結果已刪，結論留在本文件第 2 節 |
+
+所有會寫 data 分支的 workflow 共用 `concurrency: data-branch`，不取消進行中的工作。
+
+## 9. 用量
+
+| 項目 | 估算 | 依據與不確定性 |
+|---|---|---|
+| GitHub Actions | 每月約 200 次、約 200 分鐘 | 每次不滿 1 分鐘以 1 分鐘計。私有 repo 免費額度每月 2,000 分鐘（免費方案），與帳號其他私有 repo 共用；帳號目前的實際用量我查不到 |
+| 對外請求 | 每天約 60～90 次，官方為主 | 官方端點無額度；FinMind 免金鑰有每小時請求上限（現行報告常遇到 402），資料池只把它當備援與美股來源 |
+| repo 大小 | data 分支壓縮後小於 1 MB | digest 4.5 KB、序列每年約 60 KB |
+| 報告端 | 每份報告省去下載抓取程式、逐項查 FinMind、等 402 重試、解析的步驟 | 省多少要量：基準是 11/20 三份報告的執行時間（美台 15.5 分、盤中 13.4 分、盤後 14.5 分），切換後比對 |
+| 新增費用 | 無 | 不需要付費資料源或升級方案 |
+
+## 10. 建置工單（建置用 Sonnet 5.5；W7 改提示詞前切 Opus 5.5 審一次）
+
+只用 Python 標準函式庫（測試可用 pytest），不引入 pandas、requests。
 
 | 工單 | 內容 | 驗收 |
 |---|---|---|
-| B1 | `fetch/pool_fetch.py`：以「戰略情報哨_tw_data.py」為基礎改寫，FinMind 改帶 `Authorization: Bearer $FINMIND_TOKEN`，輸出改成第 4 節格式，加 VIX、美股、殖利率、交易日判斷、第 8 節檢核 | 本機用 11/20、11/21 兩天跑出完整 JSON，數字與官方網頁抽查一致 |
-| B2 | `fetch/prune.py`：daily 保留 5 份、logs 60 列、series 年度歸檔 | 單元測試：造 8 個資料夾只剩 5 個；含長假情境 |
-| B3 | `.github/workflows/pool.yml`：R1～R4 cron、workflow_dispatch、concurrency、寫 data 分支 | 手動觸發 R3 成功、data 分支出現檔案 |
-| B4 | `.github/workflows/squash.yml`：週日壓縮 data 分支 | 手動觸發後 data 分支只剩 1 個 commit，內容不變 |
-| B5 | `tools/pool_read.py`：讀 manifest 與指定資料集、檢查日期、輸出合併 JSON 與缺項清單（exit code 0＝全有、2＝部分缺、3＝讀取失敗） | 測試三種 exit code |
-| B6 | 影子期 2 個交易日：資料池照跑、報告不改；比對資料池與報告實際使用的數字 | 差異表，差異需有解釋 |
-| B7 | 報告逐一切換讀取規則（第 6 節）：美台 → 朝邸錄 → 盤後總覽 → 盤中（只用前一日籌碼）→ 紅隊、逐日研判 | 每份切換後第一份報告的資料來源狀態正確 |
-| B8 | 舊 `finmind-test.yml` 與 `results/` 移除（需 Hank 同意刪除） | — |
+| W1 核心 | `pool/http.py`、`pool/sources/{finmind,twse,taifex,tpex}.py`（解析與抓取分開）、`pool/calendar.py`、`pool/validate.py`、`pool/derive.py`、`pool/digest.py`、目錄載入 | 以 fixtures 為輸入、假設時間 2026-11-21 06:35，產出與 golden 相同（整數完全相同、小數 ±0.01；`generated_at`、`snapshot_id`、`health` 不比） |
+| W2 對帳 | `python -m pool.run [--now] [--date] [--items] [--force] [--data-dir]`：來源鏈、雙來源比對、狀態轉換、序列追加、公布時間紀錄、執行紀錄、清理 | 用假時鐘跑 14:12 只處理到期項目、融資到 21:22 才出現；連跑兩次第二次無差異；竄改 fixture 觸發 conflict；造 8 份 daily 只剩 5 份 |
+| W3 排程 | `pool.yml`（第 5 節時點與 dispatch）、`maintain.yml`（週日：交易日曆、健康統計、壓縮歷史）、`test.yml`（main 的 push 與 PR 跑 pytest） | dispatch 一次後 data 分支出現 digest；再 dispatch 無新 commit；壓縮後只剩 1 個 commit 且內容雜湊不變 |
+| W4 回補 | `python -m pool.backfill --from 2025-11-01`：用 FinMind 區間查詢與期交所 VIX 月檔補 series | 六個序列各約 250 列，日期連續對得上交易日曆 |
+| W5 讀取 | `tools/pool_read.py`：profile、過期判斷、讀穿、摘要表、結束碼 | 四種結束碼各有測試；摘要表在 60 行以內 |
+| W6 影子期 | 11/23、11/24 兩個交易日資料池照跑、報告不改。比對 digest 與當天報告實際用的數字，整理排程延遲與各項目首次取得時間 | 差異表；每個差異有解釋；據此校正 `due` 與時點 |
+| W7 切換 | 依序改提示詞：美台 → 朝邸錄 → 盤後總覽 → 盤中。每份切換後看第一份報告的資料來源狀態與執行時間 | 四份報告都以資料池為來源；執行時間與基準比較；出問題把提示詞改回前一版 |
+| W8 收尾 | Drive 的「戰略情報哨_tw_data.py」停用後移到垃圾桶（刪除前問 Hank）；Notion 建一頁資料池索引（位置、規格連結、決策） | 沒有兩份並存的抓取程式 |
 
-## 10. 第二期（暫不做，列入追蹤）
+## 11. 已知缺陷與處置
 
-- 東京主機改讀資料池的日資料，主機只保留盤中抓取，徹底消除重複。
-- 資料池加「事件與新聞摘要」層（美台股市現況策略與朝邸錄共用的美股收盤新聞），需評估 Parallel Search／Exa 在 Actions 內呼叫的可行性與費用。
+現行報告共用的「戰略情報哨_tw_data.py」計算全部契約的賣權買權未平倉比時，沒有排除當日到期的契約。現在每週三、週五各有一檔週選到期，這兩天算出的比值會偏離期交所公布值（11/20 為 40.38% 對 30.05%），最大未平倉也可能列到已到期的契約。已於 2026-11-22 修正並上傳 Drive（新檔 ID 1a46HGYfJ9QXW73gcodKkBMw5C8eXHlZi）：未平倉排除當日到期契約，並附上期交所公布值供核對；以 11/18（月選結算）、11/19（無到期）、11/20（F 週選到期）三天實測，自算值都與期交所公布值相同。資料池上線後由 `txo_oi` 的規則取代。
 
-## 11. 用量估算
+## 12. 與 v1.0 的差異
 
-| 項目 | 估算 | 依據 |
+| v1.0 | v2.0 | 原因 |
 |---|---|---|
-| GitHub Actions 分鐘 | 每月約 100 次執行 × 1～2 分鐘＝100～200 分鐘 | 私有 repo 免費方案每月 2,000 分鐘；與其他 repo 共用額度，建置後觀察實際分鐘數 |
-| FinMind 請求 | 每次執行約 15～25 次，每天約 80 次 | sponsor 額度遠高於此 |
-| repo 大小 | data 分支壓縮後 < 2MB | daily 5 份 × 約 200KB＋series |
-| Claude 用量 | 每份報告省下 10～30 次抓取與解析工具呼叫 | 依現行提示詞的抓取步驟估 |
+| 以 repo 的 FinMind 金鑰為主來源 | 官方一手優先、金鑰選用 | 金鑰實測失效；官方端點實測可用且較早公布 |
+| R1～R4 四個時段各抓固定內容 | 對帳式，每次只補缺項，共 9 個時點 | 排程會延遲或漏跑；公布時間需要實測校正 |
+| 報告缺項時退回舊抓法 | 讀取程式讀穿，同一套程式直接抓 | 報告端維持一個指令，舊抓取程式可以退役 |
+| 五個資料檔加 manifest | 單一 digest（4.5 KB）加序列 | 報告只需要讀一個小檔 |
+| daily 保留原始快照 | daily 只留 digest | 逐履約價明細主機已有，不重複存 |
+| 資料集名稱建置時再確認 | 全部實測過，附 fixtures 與標準答案 | 建置者不需要猜 |
+| 沒有 P/C 與夜盤的定義 | 明訂排除當日到期契約、夜盤歸屬日 | 實測發現現行算法有誤 |
+
+## 13. 第二期（不在本次範圍）
+
+- 東京主機的日資料改讀資料池，主機只留盤中抓取。
+- 紅隊推演（21:40）、逐日研判（22:47）、週報接上資料池；這幾份的提示詞本次沒有逐一檢視。
+- 美股收盤新聞摘要層，供美台與朝邸錄共用。
