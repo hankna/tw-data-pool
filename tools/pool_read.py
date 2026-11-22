@@ -133,7 +133,8 @@ def main(argv=None, http=None) -> int:
             out_items[name] = {**e, "via": "pool"}
             ctx.items[name] = e
             continue
-        if name in prof.get("allow_prev", []) and e and e.get("status") in DONE and not stale:
+        if (name in prof.get("allow_prev", []) and e and e.get("status") in DONE and not stale
+                and (e.get("asof") or "") >= cal["tw_prev"]):
             out_items[name] = {**e, "via": "pool", "note": "資料日早於目標日（此項目允許前一日）"}
             continue
         if a.no_direct:

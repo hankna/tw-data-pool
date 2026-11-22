@@ -123,7 +123,7 @@
     "FinMind:TaiwanFuturesDaily?data_id=TX(trading_session=position)"
    ],
    "fields": {
-    "contract": "近月＝到期月份為 6 碼、不含「/」、成交量>0 之中最小者",
+    "contract": "近月＝到期月份為 6 碼、不含「/」、成交量>0、且非當日結算之中最小者（第三個週三取次月）",
     "open": "",
     "high": "",
     "low": "",

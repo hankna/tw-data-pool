@@ -42,12 +42,13 @@ jobs:
           IN_ITEMS: ${{ github.event.inputs.items }}
           IN_FORCE: ${{ github.event.inputs.force }}
         run: |
-          args="--data-dir ../data --trigger $EVENT"
-          [ -n "$IN_DATE" ] && args="$args --date $IN_DATE"
-          [ -n "$IN_ITEMS" ] && args="$args --items $IN_ITEMS"
-          [ "$IN_FORCE" = "true" ] && args="$args --force"
-          [ "$SCHED" = "12 21 * * 1-5" ] && args="$args --recheck"
-          python -m pool.run $args
+          args=(--data-dir ../data --trigger "$EVENT")
+          [ -n "$SCHED" ] && args+=(--cron "$SCHED")
+          [ -n "$IN_DATE" ] && args+=(--date "$IN_DATE")
+          [ -n "$IN_ITEMS" ] && args+=(--items "$IN_ITEMS")
+          [ "$IN_FORCE" = "true" ] && args+=(--force)
+          [ "$SCHED" = "12 21 * * 1-5" ] && args+=(--recheck)
+          python -m pool.run "${args[@]}"
       - name: 推送到 data 分支
         working-directory: data
         run: |

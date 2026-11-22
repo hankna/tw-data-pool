@@ -99,9 +99,11 @@ def opt_inst(ctx):
                         "put_net_oi": f(p)[0], "put_net_oi_amt_k": f(p)[1]}}, D
 
 
-def _near(rows):
-    """近月：到期月份 6 碼、不含「/」、成交量>0 之中最小者。"""
-    c = sorted({r["contract_date"] for r in rows if len(r["contract_date"]) == 6 and "/" not in r["contract_date"] and r["volume"] > 0})
+def _near(rows, d=None, days=None):
+    """近月：到期月份 6 碼、不含「/」、成交量>0、且非當日結算之中最小者。"""
+    from ..txo import expiry
+    c = sorted({r["contract_date"] for r in rows if len(r["contract_date"]) == 6 and "/" not in r["contract_date"]
+                and r["volume"] > 0 and (d is None or expiry(r["contract_date"], days) != d)})
     if not c:
         raise NotYet("無成交的近月契約")
     return [r for r in rows if r["contract_date"] == c[0]][0]
@@ -109,7 +111,7 @@ def _near(rows):
 
 def _tx(ctx, d, session):
     rows = _rows(ctx, "TaiwanFuturesDaily", "TX", d - dt.timedelta(days=3), d + dt.timedelta(days=1))
-    return _near([r for r in _need(rows, d, "TX") if r["trading_session"] == session])
+    return _near([r for r in _need(rows, d, "TX") if r["trading_session"] == session], d, ctx.days)
 
 
 def tx_day(ctx):

@@ -86,3 +86,41 @@ def test_finmind_token_4xx_falls_back(monkeypatch):
     c = h.Http(token="BAD")
     assert c.finmind("X", None, "2026-01-01", "2026-01-02") == [1] and c.token_state == "invalid"
     assert all("token" not in x for x in calls[1:])
+
+
+def test_recheck_failure_keeps_previous_value():
+    out, d = build()
+    later = cal.parse_now("2026-11-21T07:00:00")
+    again = runmod.run(FixtureHttp(off={"FinMind", "twse.com.tw", "openapi.taifex.com.tw"}), Store(d), later, recheck=True)
+    for k in ("taiex", "inst_spot", "margin", "fut_inst"):
+        assert again["items"][k]["status"] == "ok" and again["items"][k]["v"] == out["items"][k]["v"], k
+    assert any("沿用原值" in n for n in again["health"]["notes"])
+
+
+def test_pending_turns_missing_after_timeout():
+    d = tempfile.mkdtemp()
+    early = runmod.run(FixtureHttp(), Store(d), cal.parse_now("2026-11-23T16:00:00"))
+    assert early["items"]["taiex"]["status"] == "pending"          # 11/23 尚未公布、未逾時
+    late = runmod.run(FixtureHttp(), Store(d), cal.parse_now("2026-11-23T20:00:00"))
+    assert late["items"]["taiex"]["status"] == "missing" and late["health"]["alert"] is True
+
+
+def test_us_holidays():
+    days = [dt.date(2026, 11, 1) + dt.timedelta(days=i) for i in range(60)]
+    days = [x for x in days if x.weekday() < 5]
+    c = cal.compute(cal.parse_now("2026-11-27T06:15:00"), days)
+    assert c["us_last"] == "2026-11-25"                                # 11/26 感恩節休市
+    assert dt.date(2026, 4, 3) in cal.us_holidays(2026)                # 耶穌受難日
+    assert dt.date(2027, 12, 24) in cal.us_holidays(2027)              # 聖誕節逢週六，週五補假
+
+
+def test_near_month_skips_settling_contract():
+    from pool.sources import taifex
+    row = lambda m, vol: ["2026/11/18", "TX", m, "1", "1", "1", "1", "0", "0%", str(vol), "1", "1", "", "", "", "", "", "一般"]
+    r = taifex._near_row([row("202611", 50000), row("202612", 90000)], dt.date(2026, 11, 18), "一般")
+    assert r[2] == "202612"
+
+
+def test_sched_from_cron():
+    s = runmod.sched_from_cron("12 21 * * 1-5", cal.parse_now("2026-11-24T05:40:00"))
+    assert s == "2026-11-24T05:12:00+08:00"

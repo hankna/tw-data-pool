@@ -17,6 +17,7 @@ from .store import Store
 from .util import iso, parse_date
 
 DONE = ("ok", "conflict")
+TIMEOUT_H = 4   # 過預計公布時間 4 小時仍未公布，由 pending 改標 missing（會觸發警示）
 
 
 def load_days(http, store: Store, today: dt.date, refresh: bool = False):
@@ -89,7 +90,15 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
             e = prev if prev else {"status": "pending", "asof": None}
         else:
             e = dg.resolve(name, cfg, ctx, policy)
-            if e["status"] in DONE:
+            if e["status"] not in DONE and done:
+                # 重抓（修訂偵測或強制）失敗時沿用原值，不讓暫時性的連線問題蓋掉已取得的資料
+                notes.append(f"{name} 重抓失敗，沿用原值")
+                e = prev
+            elif e["status"] == "pending" and now > due + dt.timedelta(hours=TIMEOUT_H):
+                e = {**e, "status": "missing", "notes": e.get("notes", []) + [f"逾預計時間 {TIMEOUT_H} 小時仍未公布"]}
+            if e is prev:
+                pass
+            elif e["status"] in DONE:
                 e["fresh"] = not done
                 if done and prev.get("v") != e["v"]:
                     e["rev"] = prev.get("rev", 0) + 1
@@ -132,6 +141,16 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     return out
 
 
+def sched_from_cron(cron: str, now: dt.datetime) -> str:
+    """cron（UTC，固定分與時）→ 最近一次應觸發的台灣時間。"""
+    mi, hr = (int(x) for x in cron.split()[:2])
+    u = now.astimezone(dt.timezone.utc)
+    s = u.replace(hour=hr, minute=mi, second=0, microsecond=0)
+    if s > u:
+        s -= dt.timedelta(days=1)
+    return s.astimezone(cal_mod.TZ).isoformat(timespec="seconds")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="pool.run")
     ap.add_argument("--now")
@@ -142,10 +161,13 @@ def main(argv=None):
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--trigger", default="manual")
     ap.add_argument("--scheduled-for")
+    ap.add_argument("--cron", help="排程觸發時帶入 cron 字串，用來計算排程延遲")
     a = ap.parse_args(argv)
     now = cal_mod.parse_now(a.now) if a.now else cal_mod.now_tw()
     if a.date:   # 指定日期：以該日 18:00 的視角重算
         now = dt.datetime.combine(parse_date(a.date), dt.time(18, 0), cal_mod.TZ)
+    if a.cron and not a.scheduled_for:
+        a.scheduled_for = sched_from_cron(a.cron, now)
     store = Store(a.data_dir)
     http = Http()
     out = run(http, store, now, only=set(a.items.split(",")) if a.items else None, force=a.force, recheck=a.recheck,

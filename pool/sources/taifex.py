@@ -98,9 +98,11 @@ def _csv(ctx, kind, commodity, d):
     return list(csv.reader(io.StringIO(raw.decode("big5", "ignore"))))
 
 
-def _near_row(rows, d, session):
+def _near_row(rows, d, session, days=None):
+    """近月：6 碼、不含「/」、成交量>0，且不是當日結算的契約（第三個週三的日盤結算後即失效）。"""
     cand = [r for r in rows if len(r) > 17 and r[1] == "TX" and r[0] == iso(d).replace("-", "/")
-            and "/" not in r[2] and r[17].strip() == session and (num(r[9]) or 0) > 0]
+            and "/" not in r[2] and r[17].strip() == session and (num(r[9]) or 0) > 0
+            and txo_mod.expiry(r[2].strip(), days) != d]
     if not cand:
         raise NotYet(f"期交所 futDataDown 尚無 {iso(d)} {session}")
     return min(cand, key=lambda r: r[2].strip())
@@ -108,7 +110,7 @@ def _near_row(rows, d, session):
 
 def tx_day(ctx):
     D = ctx.d("tw_last")
-    r = _near_row(_csv(ctx, "futDataDown", "TX", D), D, "一般")
+    r = _near_row(_csv(ctx, "futDataDown", "TX", D), D, "一般", ctx.days)
     tc = ctx.items.get("taiex", {}).get("v", {}).get("close")
     return {"contract": r[2].strip(), "open": num(r[3]), "high": num(r[4]), "low": num(r[5]), "close": num(r[6]),
             "settle": num(r[10]), "chg": num(r[7]), "volume": _i(r[9]), "oi": _i(r[11]),
@@ -117,7 +119,7 @@ def tx_day(ctx):
 
 def tx_night(ctx):
     N = parse_date(ctx.cal["_night_trade"])
-    r = _near_row(_csv(ctx, "futDataDown", "TX", N), N, "盤後")
+    r = _near_row(_csv(ctx, "futDataDown", "TX", N), N, "盤後", ctx.days)
     return {"trading_date": iso(N), "session": ctx.cal["_night_session"], "contract": r[2].strip(),
             "open": num(r[3]), "high": num(r[4]), "low": num(r[5]), "close": num(r[6]), "chg": num(r[7]),
             "chg_pct": num(r[8]), "volume": _i(r[9])}, N
