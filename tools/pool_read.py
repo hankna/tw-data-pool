@@ -42,6 +42,31 @@ def read_data_file(rel: str, data_dir: str | None):
         return _sh(["git", "show", f"FETCH_HEAD:{rel}"], cwd=ROOT)
 
 
+_ZH = [
+    ("FinMind:", lambda s: f"FinMind（{s.split(':', 1)[1]}）"),
+    ("TWSE:fund/BFI82U", lambda s: "證交所 三大法人買賣金額（BFI82U）"),
+    ("TWSE:afterTrading/MI_INDEX", lambda s: "證交所 每日收盤行情（MI_INDEX）"),
+    ("TWSE:marginTrading/MI_MARGN", lambda s: "證交所 信用交易統計（MI_MARGN）"),
+    ("TWSE:", lambda s: "證交所"),
+    ("TPEx:", lambda s: "櫃買中心 OpenAPI 指數"),
+    ("TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFutures", lambda s: "期交所 OpenAPI 三大法人期貨"),
+    ("TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfCalls", lambda s: "期交所 OpenAPI 三大法人選擇權"),
+    ("TAIFEX:openapi/PutCallRatio", lambda s: "期交所 OpenAPI 賣權買權比"),
+    ("TAIFEX:openapi/OpenInterestOfLargeTraders", lambda s: "期交所 OpenAPI 大額交易人未沖銷部位"),
+    ("TAIFEX:futDataDown", lambda s: "期交所 期貨每日交易行情下載"),
+    ("TAIFEX:optDataDown", lambda s: "期交所 選擇權每日交易行情下載"),
+    ("TAIFEX:file", lambda s: "期交所 臺指選擇權波動率指數每日檔"),
+    ("derived:", lambda s: "資料池自算（逐履約價加總，已排除當日到期）"),
+]
+
+
+def src_zh(src: str | None) -> str:
+    for k, f in _ZH:
+        if src and src.startswith(k):
+            return f(src)
+    return src or ""
+
+
 def brief(name: str, e: dict) -> str:
     v = e.get("v")
     if not isinstance(v, dict):
@@ -51,12 +76,19 @@ def brief(name: str, e: dict) -> str:
         "inst_spot": ("foreign_bn", "trust_bn", "dealer_bn", "total_bn"),
         "fut_inst": None, "opt_inst": None, "tx_day": ("close", "chg", "oi", "basis"),
         "tx_night": ("close", "chg", "chg_pct", "session"), "txo_oi": ("monthly", "weekly"),
-        "pc_ratio": ("oi_pct", "vol_pct"), "large_traders": ("market_oi",),
+        "pc_ratio": ("oi_pct", "vol_pct", "put_oi", "call_oi"), "large_traders": ("market_oi",),
         "vix": ("close", "chg"), "margin": ("balance_bn", "chg_bn"), "usd_twd": ("mid",),
         "us_vix": ("close", "chg"), "us_yield": ("y10", "y2"),
     }.get(name, ())
     if name == "fut_inst":
         return " ".join(f"{k}={v[k]['net_oi']}({v[k]['chg']:+d})" if v[k].get("chg") is not None else f"{k}={v[k]['net_oi']}" for k in v)
+    if name == "txo_oi":
+        parts = []
+        for c, tp in v.get("top", {}).items():
+            cl, pu = tp.get("call") or [[None, None]], tp.get("put") or [[None, None]]
+            parts.append(f"{c} 買權最大 {cl[0][0]}({cl[0][1]}) 賣權最大 {pu[0][0]}({pu[0][1]})")
+        exp = "、".join(v.get("expiring_today") or []) or "無"
+        return "；".join(parts) + f"；當日到期已排除：{exp}"
     if name == "opt_inst":
         f = v["foreign"]
         return f"外資 call_net={f['call_net_oi']} put_net={f['put_net_oi']}"
@@ -151,6 +183,17 @@ def main(argv=None, http=None) -> int:
             out_items[name] = {**r, "via": "none", **({"stale": {"asof": old["asof"], "v": old.get("v")}} if old else {})}
             missing.append(name)
 
+    for e in out_items.values():
+        if e.get("src"):
+            e["src_zh"] = src_zh(e["src"])
+    hist = []
+    try:
+        import csv, io
+        rows = list(csv.DictReader(io.StringIO(read_data_file("series/taiex_daily.csv", a.data_dir).decode("utf-8"))))
+        hist = [[r["date"], *(float(r[k]) if r[k] else None for k in ("open", "high", "low", "close"))]
+                for r in rows if r["date"] <= cal["tw_last"]][-60:]
+    except Exception:  # noqa: BLE001
+        notes.append("讀不到加權指數歷史序列")
     ex = 3 if (digest is None and not via_direct) else 2 if missing else 1 if via_direct else 0
     result = {
         "snapshot_id": (digest or {}).get("snapshot_id"), "generated_at": (digest or {}).get("generated_at"),
@@ -158,16 +201,18 @@ def main(argv=None, http=None) -> int:
         "calendar": {k: v for k, v in cal.items() if not k.startswith("_")},
         "items": out_items,
         "derived": (digest or {}).get("derived") if (digest and "taiex" not in via_direct and not stale) else None,
+        "taiex_hist": hist,
+        "taiex_hist_cols": ["date", "open", "high", "low", "close"],
         "health": (digest or {}).get("health"),
         "read": {"exit": ex, "via_direct": via_direct, "missing": missing, "notes": notes},
     }
     Path(a.out).write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n", "utf-8")
 
     print(f"資料池快照 {result['snapshot_id'] or '無'}｜產生 {result['generated_at'] or '無'}｜報告日 {a.date}｜結束碼 {ex}")
-    print(f"{'項目':<14}{'狀態':<9}{'資料日':<12}{'來源':<10}數值")
+    print("項目｜狀態｜資料日｜取得｜來源｜數值")
     for n in prof["need"]:
         e = out_items[n]
-        print(f"{n:<14}{e.get('status', '?'):<9}{(e.get('asof') or '-'):<12}{e.get('via', '-'):<10}{brief(n, e)}")
+        print(f"{n}｜{e.get('status', '?')}｜{e.get('asof') or '-'}｜{e.get('via', '-')}｜{e.get('src_zh', '-')}｜{brief(n, e)}")
     d = result["derived"]
     if d:
         print(f"衍生：rv20={d['rv20_annual_pct']}% 1σ(rv)={d['sigma1_rv_pts']} 1σ(vix)={d['sigma1_vix_pts']}")

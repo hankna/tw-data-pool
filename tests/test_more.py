@@ -124,3 +124,14 @@ def test_near_month_skips_settling_contract():
 def test_sched_from_cron():
     s = runmod.sched_from_cron("12 21 * * 1-5", cal.parse_now("2026-11-24T05:40:00"))
     assert s == "2026-11-24T05:12:00+08:00"
+
+
+def test_pool_read_src_zh_and_history():
+    out, d = build()
+    f = tempfile.mktemp()
+    pool_read.main(["--profile", "panhou", "--date", "2026-11-20", "--out", f, "--data-dir", d,
+                    "--now", "2026-11-21T06:15:00"], http=FixtureHttp())
+    r = json.loads(Path(f).read_text("utf-8"))
+    assert r["items"]["inst_spot"]["src_zh"].startswith("證交所")
+    assert r["items"]["vix"]["src_zh"].startswith("期交所")
+    assert len(r["taiex_hist"]) >= 21 and r["taiex_hist"][-1][0] == "2026-11-20"
