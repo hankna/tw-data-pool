@@ -2,28 +2,35 @@
 
 每份報告把下面這段放進提示詞，`<代號>` 換成 `ustw`（美台股市現況策略）、`chaodilu`（朝邸錄）、`midday`（盤中策略簡報）、`panhou`（盤後總覽）。
 
-## 要貼上的段落
+## 要貼上的段落（2026-11-22 Opus 審定版）
+
+放在各提示詞「品質標準／定位」之後、原「資料來源規則」的位置，原「資料來源規則」與「台股資料抓取程式」兩段刪除。`{code}` 換成 profile 代號，`{note}` 換成該報告的時點說明（見下表）。
 
 ```
-━━ 資料池（2026-11 起，優先於本提示詞其他資料來源寫法） ━━
-台股、台指期、台指選擇權與美股收盤的行情與籌碼數字，一律由資料池取得，不要自己逐項查 FinMind 或官方網頁。
-1. 用 ToolSearch 載入 add_repo，呼叫 add_repo（owner hankna、repo tw-data-pool、access read），照回傳指令淺層複製（--depth 1）。
-2. 執行：python3 -I <repo>/tools/pool_read.py --profile <代號> --date 報告日YYYY-MM-DD --out pool.json
-3. 讀它印出的摘要表（每個項目的數值、資料日、來源、狀態），需要細項再讀 pool.json。
-   - 狀態 ok：直接使用。報告的來源寫摘要表的「來源」欄，資料日寫「資料日」欄；各項目的資料日可能不同，照實標示。
-   - 狀態 missing：只有這些項目才用 WebSearch 或 web-fetch 子代理找，至少 2 個來源；找不到就依呈現規則刪除。
-   - 狀態 conflict：用摘要表的值（官方值），在資料來源狀態寫一行「兩來源不一致」。
+━━ 資料池（2026-11-22 Hank 核准上線，優先於本提示詞其他所有資料來源寫法） ━━
+台股、台指期、台指選擇權、台指 VIX 與美股收盤的行情與籌碼數字，一律先讀資料池（GitHub hankna/tw-data-pool：GitHub Actions 每天定時向期交所、證交所、櫃買中心與 FinMind 抓一次，各報告共用），不要再逐項查 FinMind、讀官方網頁或執行舊的「戰略情報哨_tw_data.py」。本提示詞後面凡是寫「查 FinMind」「執行抓取程式」「讀期交所／證交所網頁」的台灣端與美股項目，只在資料池把該項標成 missing 或 pending 時才適用。
+1. 取得：add_repo（owner hankna、repo tw-data-pool、access read），淺層複製（--depth 1）；可與 tw-index-forecast 平行做。
+2. 執行：python3 -I <資料池目錄>/tools/pool_read.py --profile {code} --date 報告日YYYY-MM-DD --out pool.json 。資料池沒趕上的項目，程式會直接向官方或 FinMind 補抓（讀穿，取得欄標 direct），這是「不得用 curl 或程式繞過被擋網站」規定的例外；補不到就標 missing，不要另想辦法繞過。
+3. 讀摘要表（項目｜狀態｜資料日｜取得｜來源｜數值），細項讀 pool.json：items.<項目>.v 數值、asof 資料日、src_zh 來源中文名；derived 有 rv20_annual_pct、sigma1_rv_pts、sigma1_vix_pts、closes_7；taiex_hist 是近 60 個交易日加權［日期, 開, 高, 低, 收］。
+   - ok：直接使用；資料池已對 7 個關鍵項目做官方與 FinMind 雙來源比對，算已完成「至少 2 個來源」核對。來源照抄 src_zh，資料日照抄 asof。
+   - conflict：用資料池的值（官方值），資料來源狀態寫「兩來源不一致」。
+   - missing、pending：才改用原本的外部方法（至少 2 個來源）；仍取不到依呈現規則刪除。{note}
 4. 資料來源狀態寫一行：「資料池快照 <snapshot_id>；讀穿補齊：<項目或無>；缺：<項目或無>」。
-5. 程式結束碼為 3（完全失敗）時，在資料來源狀態寫明，改用 WebSearch 與 web-fetch 子代理取得必要數字。
-6. 定義以資料池為準，不要自行重算：賣權買權未平倉比與最大未平倉都已排除當日到期契約；夜盤的 trading_date 是期交所的歸屬交易日，實際時段看 session 欄；usd_twd 是臺灣銀行牌告即期匯率，引用時照這個名稱寫。
-7. 資料池沒有的項目照本提示詞原規定：美國 VIX 期限結構、原油、黃金、比特幣、新聞與事件、Apollo、SemiAnalysis、盤中快照（主機 midday_latest.json、day_path_latest.json）。
+5. 結束碼 3（完全失敗）：寫明後改用備援 Drive「戰略情報哨_tw_data.py」，再不行才逐項外搜。
+6. 定義以資料池為準：P/C 比與最大未平倉（txo_oi.top）已排除當日到期契約；tx_night.trading_date 是期交所歸屬交易日，時段看 session；台指期近月已排除當日結算契約；fut_inst 是臺股期貨淨未平倉與增減；usd_twd 是臺灣銀行牌告即期匯率（不是台北外匯經紀收盤價）；金額單位億元。
+7. 台指 VIX：資料池 vix 為 ok 就列入，一日 1σ 用 derived.sigma1_vix_pts（註明依台指 VIX 推算、非歷史校準）；不是 ok 才依原規則不顯示並改用 derived.sigma1_rv_pts。large_traders（臺股期貨全部月份前五大、前十大與特定法人）與 opt_inst（外資臺指選擇權淨部位）也由資料池提供。
+8. 資料池沒有、但 FinMind 有的項目（黃金、原油、美元指數等）仍用 curl 查 FinMind 開放 API（不帶 token），沒有才外搜。
+（朝邸錄、盤後總覽另加）9. health.alert 為 true 時照常寄出，寄出後用 PushNotification 傳一則簡訊：「資料池警示：」＋health.notes 第一句。
 ```
 
-朝邸錄與盤後總覽另加一句：
+| 報告 | code | {note} |
+|---|---|---|
+| 美台股市現況策略 05:37 | ustw | 05:37 時美股項目通常仍 pending（FinMind 約 06:00 後更新），照原方法外搜；夜盤通常已 ok |
+| 朝邸錄 06:15 | chaodilu | 美股項目通常已 ok；仍 pending 就照第 2 步 B 的固定外部來源清單 |
+| 盤中策略簡報 11:12 | midday | 資料池只給前一交易日收盤資料；盤中數字仍以主機快照為主（原資料來源規則第 2 點保留） |
+| 盤後總覽 18:23 | panhou | 18:23 融資融券通常未公布，資料池給前一交易日值，資料日照實標示 |
 
-```
-8. pool.json 的 health.alert 為 true 時，寄信後用 PushNotification 傳一則簡訊，內容用 health.notes 的第一句。
-```
+各報告同時修改：寄出前自我檢查的「收盤數字至少 2 個來源」加註「資料池 ok 的項目算已核對」；「已先查 FinMind」改為「取自資料池並標明來源與資料日，資料來源狀態有資料池快照一行」；第 2 步中台灣端「先查 FinMind」「讀期交所網頁」的寫法改為「取自資料池，missing 才讀」。
 
 ## 各報告要刪掉的舊段落
 
