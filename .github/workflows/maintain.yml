@@ -1,0 +1,36 @@
+name: maintain
+# 每週日 03:17（台灣時間）：更新交易日曆、產生 health.json、年初封存、把 data 分支歷史壓成單一提交。
+on:
+  schedule:
+    - cron: "17 19 * * 6"
+  workflow_dispatch:
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, path: code }
+      - uses: actions/checkout@v4
+        with: { ref: data, path: data }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: 維護
+        working-directory: code
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python -m pool.maintain --data-dir ../data
+      - name: 壓縮歷史並推送
+        working-directory: data
+        run: |
+          git config user.name "tw-data-pool[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -q --orphan squashed
+          git add -A
+          git commit -q -m "data 快照 $(TZ=Asia/Taipei date +'%F')（每週壓縮）"
+          git push -f origin squashed:data

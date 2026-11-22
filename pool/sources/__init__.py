@@ -1,0 +1,25 @@
+"""來源解析函式。每個函式 f(ctx) 回傳 (v, asof)，或丟出 NotYet／SourceError。"""
+from __future__ import annotations
+import datetime as dt
+from dataclasses import dataclass, field
+from ..util import parse_date, iso
+
+
+@dataclass
+class Ctx:
+    http: object
+    cal: dict
+    now: dt.datetime
+    days: list = field(default_factory=list)
+    series: object = None            # store.Store，提供 rows(name)
+    items: dict = field(default_factory=dict)   # 已解出的項目（供 basis、pc 備援使用）
+    side: dict = field(default_factory=dict)    # 副產品：要寫進 series 的資料
+    _cache: dict = field(default_factory=dict)
+
+    def d(self, key: str) -> dt.date:
+        return parse_date(self.cal[key])
+
+    def cached(self, key, fn):
+        if key not in self._cache:
+            self._cache[key] = fn()
+        return self._cache[key]

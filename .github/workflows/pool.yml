@@ -1,0 +1,60 @@
+name: pool
+# 對帳式抓取：每次只補「已到預計公布時間、但還不是 ok」的項目。時間為台灣時間，cron 為 UTC。
+on:
+  schedule:
+    - cron: "12 21 * * 1-5"   # 05:12 週二～六（夜盤收盤；順便重抓前一日關鍵項目偵測修訂）
+    - cron: "2 22 * * 1-5"    # 06:02 週二～六（美股收盤）
+    - cron: "32 22 * * 1-5"   # 06:32 週二～六
+    - cron: "12 6 * * 1-5"    # 14:12 週一～五
+    - cron: "22 7 * * 1-5"    # 15:22
+    - cron: "17 8 * * 1-5"    # 16:17
+    - cron: "32 9 * * 1-5"    # 17:32
+    - cron: "22 13 * * 1-5"   # 21:22
+    - cron: "52 13 * * 1-5"   # 21:52
+  workflow_dispatch:
+    inputs:
+      date:    { description: "指定資料日 YYYY-MM-DD（留空＝現在）", required: false, default: "" }
+      items:   { description: "只補這些項目，逗號分隔（留空＝全部）", required: false, default: "" }
+      force:   { description: "強制重抓（true/false）", required: false, default: "false" }
+concurrency:
+  group: data-branch
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, path: code }
+      - uses: actions/checkout@v4
+        with: { ref: data, path: data }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: 執行
+        working-directory: code
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
+          IN_DATE: ${{ github.event.inputs.date }}
+          IN_ITEMS: ${{ github.event.inputs.items }}
+          IN_FORCE: ${{ github.event.inputs.force }}
+        run: |
+          args="--data-dir ../data --trigger $EVENT"
+          [ -n "$IN_DATE" ] && args="$args --date $IN_DATE"
+          [ -n "$IN_ITEMS" ] && args="$args --items $IN_ITEMS"
+          [ "$IN_FORCE" = "true" ] && args="$args --force"
+          [ "$SCHED" = "12 21 * * 1-5" ] && args="$args --recheck"
+          python -m pool.run $args
+      - name: 推送到 data 分支
+        working-directory: data
+        run: |
+          git config user.name "tw-data-pool[bot]"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "沒有變動"; exit 0; fi
+          git commit -m "pool $(TZ=Asia/Taipei date +'%F %H:%M')" -q
+          for i in 1 2 3; do git push origin HEAD:data && exit 0; git pull --rebase origin data; done
+          exit 1
