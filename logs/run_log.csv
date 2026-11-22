@@ -1,1 +1,2 @@
-run_at,run_id,data_date,ok,partial,missing,seconds,note
+run_at,trigger,scheduled_for,delay_min,filled,pending,missing,conflict,seconds,note
+2026-11-22T09:33:08+08:00,workflow_dispatch,,,17,0,0,0,21.0,
