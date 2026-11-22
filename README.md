@@ -11,4 +11,6 @@
 - W1～W5 完成並上線：抓取核心、對帳式執行、排程（pool／maintain／test）、報告端讀取程式 `tools/pool_read.py`。
 - 驗收：`tests/fixtures/2026-11-20/` 對 `tests/golden/digest_2026-11-20.json` 全數吻合；GitHub 上實際執行的 17 個項目與標準答案也完全相同。
 - 來源順序：官方優先（`pool/catalog.json` 的 `source_policy`）。FinMind 金鑰失效，不更新；程式偵測到失效就改走免金鑰，`health.token` 標 `invalid`。
-- W6 影子期：11/23、11/24（資料池照跑、報告不動）。W7 切換報告提示詞前需 Opus 審查。
+- Opus 覆核（11/22）修正：重抓失敗沿用原值、美國休市日、結算日近月、逾時轉缺、排程延遲紀錄、允許前一日的範圍。
+- W7 完成（11/22，Hank 核准提前上線）：美台股市現況策略、朝邸錄、盤中策略簡報、盤後總覽四份排程提示詞改為先讀資料池，段落內容見 `docs/REPORT_SNIPPET.md`；資料池標 missing 才退回原外搜方法，結束碼 3 退回 Drive 舊抓取程式。
+- W8（舊抓取程式退場）待上線兩週穩定後再議，刪除前先問 Hank。
