@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-23T22:18:32+08:00",
- "snapshot_id": "3e15d524",
+ "generated_at": "2026-11-24T02:04:10+08:00",
+ "snapshot_id": "3e5ebe22",
  "calendar": {
   "tw_last": "2026-11-23",
   "tw_prev": "2026-11-20",
@@ -190,27 +190,7 @@
    "asof": null,
    "notes": [
     "逾預計時間 4 小時仍未公布"
-   ],
-   "prev": {
-    "asof": "2026-11-20",
-    "v": {
-     "scope": "TX+MTX/4 全部月份",
-     "all": {
-      "top5_buy": 91388,
-      "top5_sell": 69188,
-      "top10_buy": 101262,
-      "top10_sell": 97201
-     },
-     "specific": {
-      "top5_buy": 91388,
-      "top5_sell": 69188,
-      "top10_buy": 99890,
-      "top10_sell": 97201
-     },
-     "market_oi": 136816
-    },
-    "src": "TAIFEX:openapi/OpenInterestOfLargeTradersFutures"
-   }
+   ]
   },
   "vix": {
    "asof": "2026-11-23",
@@ -370,7 +350,7 @@
  },
  "health": {
   "alert": false,
-  "token": "invalid",
+  "token": "valid",
   "notes": []
  }
 }
