@@ -35,6 +35,14 @@ def read_data_file(rel: str, data_dir: str | None):
     """讀 data 分支的檔案：本機目錄（測試）→ gh api raw → git fetch。回傳 bytes。"""
     if data_dir:
         return (Path(data_dir) / rel).read_bytes()
+    try:   # 公開 repo：免權限直接讀（排程報告的環境沒有 add_repo，也沒有本 repo 的 GitHub 權限）
+        import urllib.request
+        req = urllib.request.Request(f"https://raw.githubusercontent.com/{REPO}/data/{rel}",
+                                     headers={"User-Agent": "tw-data-pool-reader", "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         return _sh(["gh", "api", "-H", "Accept: application/vnd.github.raw", f"repos/{REPO}/contents/{rel}?ref=data"])
     except Exception:  # noqa: BLE001
