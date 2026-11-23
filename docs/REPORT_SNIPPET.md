@@ -9,7 +9,7 @@
 ```
 ━━ 資料池（2026-11-22 Hank 核准上線，優先於本提示詞其他所有資料來源寫法） ━━
 台股、台指期、台指選擇權、台指 VIX 與美股收盤的行情與籌碼數字，一律先讀資料池（GitHub hankna/tw-data-pool：GitHub Actions 每天定時向期交所、證交所、櫃買中心與 FinMind 抓一次，各報告共用），不要再逐項查 FinMind、讀官方網頁或執行舊的「戰略情報哨_tw_data.py」。本提示詞後面凡是寫「查 FinMind」「執行抓取程式」「讀期交所／證交所網頁」的台灣端與美股項目，只在資料池把該項標成 missing 或 pending 時才適用。
-1. 取得：add_repo（owner hankna、repo tw-data-pool、access read），淺層複製（--depth 1）；可與 tw-index-forecast 平行做。
+1. 取得：tw-data-pool 是公開 repo，直接 git clone --depth 1 https://github.com/hankna/tw-data-pool（不需要 add_repo）；clone 失敗才用 add_repo（owner hankna、repo tw-data-pool、access read）；可與 tw-index-forecast 平行做。
 2. 執行：python3 -I <資料池目錄>/tools/pool_read.py --profile {code} --date 報告日YYYY-MM-DD --out pool.json 。資料池沒趕上的項目，程式會直接向官方或 FinMind 補抓（讀穿，取得欄標 direct），這是「不得用 curl 或程式繞過被擋網站」規定的例外；補不到就標 missing，不要另想辦法繞過。
 3. 讀摘要表（項目｜狀態｜資料日｜取得｜來源｜數值），細項讀 pool.json：items.<項目>.v 數值、asof 資料日、src_zh 來源中文名；derived 有 rv20_annual_pct、sigma1_rv_pts、sigma1_vix_pts、closes_7；taiex_hist 是近 60 個交易日加權［日期, 開, 高, 低, 收］。
    - ok：直接使用；資料池已對 7 個關鍵項目做官方與 FinMind 雙來源比對，算已完成「至少 2 個來源」核對。來源照抄 src_zh，資料日照抄 asof。
