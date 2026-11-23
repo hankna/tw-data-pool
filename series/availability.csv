@@ -27,3 +27,4 @@ date,item,first_ok_at,src
 2026-11-23,txo_oi,2026-11-23T22:18:32+08:00,FinMind:TaiwanOptionDaily
 2026-11-23,usd_twd,2026-11-23T22:18:32+08:00,FinMind:TaiwanExchangeRate
 2026-11-23,vix,2026-11-23T22:18:32+08:00,TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt
+2026-11-24,tx_night,2026-11-24T05:38:50+08:00,TAIFEX:futDataDown
