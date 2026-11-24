@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-24T09:02:01+08:00",
- "snapshot_id": "75cddbbd",
+ "generated_at": "2026-11-24T13:18:00+08:00",
+ "snapshot_id": "349152b1",
  "calendar": {
   "tw_last": "2026-11-23",
   "tw_prev": "2026-11-20",
@@ -22,7 +22,8 @@
     "chg_pct": 2.16,
     "turnover_bn": 11137.43
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "tpex": {
    "asof": "2026-11-23",
@@ -45,27 +46,29 @@
     "dealer_hedge_bn": -161.02,
     "total_bn": -521.04
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "fut_inst": {
    "asof": "2026-11-23",
    "status": "ok",
-   "src": "FinMind:TaiwanFuturesInstitutionalInvestors",
+   "src": "TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFuturesContractsBytheDate",
    "v": {
-    "foreign": {
-     "net_oi": -103432,
-     "chg": -5569
+    "dealer": {
+     "net_oi": 1318,
+     "chg": 1036
     },
     "trust": {
      "net_oi": 93565,
      "chg": 5966
     },
-    "dealer": {
-     "net_oi": 1318,
-     "chg": 1036
+    "foreign": {
+     "net_oi": -103432,
+     "chg": -5569
     }
    },
-   "xcheck": "n/a"
+   "xcheck": "match",
+   "rev": 0
   },
   "opt_inst": {
    "asof": "2026-11-23",
@@ -172,7 +175,8 @@
      "put": 43378
     }
    },
-   "xcheck": "n/a"
+   "xcheck": "n/a",
+   "rev": 0
   },
   "pc_ratio": {
    "asof": "2026-11-23",
@@ -183,7 +187,8 @@
     "vol_pct": null,
     "put_oi": 43378,
     "call_oi": 140388
-   }
+   },
+   "rev": 0
   },
   "large_traders": {
    "asof": "2026-11-23",
@@ -214,7 +219,8 @@
     "close": 55.36,
     "close_1min_avg": 55.47,
     "chg": 3.23
-   }
+   },
+   "rev": 0
   },
   "margin": {
    "asof": "2026-11-23",
@@ -226,7 +232,8 @@
     "short_balance": 172957,
     "short_chg": -26834
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "usd_twd": {
    "asof": "2026-11-23",
@@ -316,8 +323,11 @@
    }
   },
   "us_yield": {
-   "status": "pending",
-   "asof": null
+   "status": "missing",
+   "asof": null,
+   "notes": [
+    "逾預計時間 4 小時仍未公布"
+   ]
   }
  },
  "derived": {
