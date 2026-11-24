@@ -1,12 +1,12 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-25T02:58:11+08:00",
- "snapshot_id": "739d40de",
+ "generated_at": "2026-11-25T07:07:18+08:00",
+ "snapshot_id": "b4f98f6d",
  "calendar": {
   "tw_last": "2026-11-24",
   "tw_prev": "2026-11-23",
   "tw_next": "2026-11-25",
-  "us_last": "2026-11-23"
+  "us_last": "2026-11-24"
  },
  "items": {
   "taiex": {
@@ -186,11 +186,25 @@
    }
   },
   "large_traders": {
-   "status": "missing",
-   "asof": null,
-   "notes": [
-    "逾預計時間 4 小時仍未公布"
-   ]
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "TAIFEX:openapi/OpenInterestOfLargeTradersFutures",
+   "v": {
+    "scope": "TX+MTX/4 全部月份",
+    "all": {
+     "top5_buy": 96929,
+     "top5_sell": 68644,
+     "top10_buy": 107723,
+     "top10_sell": 97916
+    },
+    "specific": {
+     "top5_buy": 96929,
+     "top5_sell": 68644,
+     "top10_buy": 107723,
+     "top10_sell": 97916
+    },
+    "market_oi": 142042
+   }
   },
   "vix": {
    "asof": "2026-11-24",
@@ -226,90 +240,102 @@
    "label": "臺灣銀行牌告即期匯率"
   },
   "tx_night": {
-   "asof": "2026-11-24",
+   "asof": "2026-11-25",
    "status": "ok",
    "src": "TAIFEX:futDataDown",
    "v": {
-    "trading_date": "2026-11-24",
-    "session": "11/23 15:00～11/24 05:00",
+    "trading_date": "2026-11-25",
+    "session": "11/24 15:00～11/25 05:00",
     "contract": "202612",
-    "open": 36671.0,
-    "high": 40324.0,
-    "low": 36280.0,
-    "close": 39829.0,
-    "chg": 3170.0,
-    "chg_pct": 8.65,
-    "volume": 92939
+    "open": 40772.0,
+    "high": 40900.0,
+    "low": 37730.0,
+    "close": 38482.0,
+    "chg": -1842.0,
+    "chg_pct": -4.57,
+    "volume": 95642
    }
   },
   "us_index": {
-   "asof": "2026-11-23",
-   "status": "ok",
-   "src": "FinMind:USStockPrice",
-   "v": {
-    "^GSPC": {
-     "close": 7237.17,
-     "chg_pct": 4.73
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "^GSPC": {
+      "close": 7237.17,
+      "chg_pct": 4.73
+     },
+     "^IXIC": {
+      "close": 24089.56,
+      "chg_pct": 6.51
+     },
+     "^DJI": {
+      "close": 49595.31,
+      "chg_pct": 3.01
+     },
+     "^SOX": {
+      "close": 9588.05,
+      "chg_pct": 14.03
+     }
     },
-    "^IXIC": {
-     "close": 24089.56,
-     "chg_pct": 6.51
-    },
-    "^DJI": {
-     "close": 49595.31,
-     "chg_pct": 3.01
-    },
-    "^SOX": {
-     "close": 9588.05,
-     "chg_pct": 14.03
-    }
+    "src": "FinMind:USStockPrice"
    }
   },
   "us_stock": {
-   "asof": "2026-11-23",
-   "status": "ok",
-   "src": "FinMind:USStockPrice",
-   "v": {
-    "NVDA": {
-     "close": 165.05,
-     "chg_pct": 31.48
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "NVDA": {
+      "close": 165.05,
+      "chg_pct": 31.48
+     },
+     "TSM": {
+      "close": 363.6,
+      "chg_pct": 14.08
+     },
+     "AMD": {
+      "close": 453.46,
+      "chg_pct": 6.85
+     },
+     "AVGO": {
+      "close": 313.55,
+      "chg_pct": 3.0
+     },
+     "MU": {
+      "close": 707.7,
+      "chg_pct": 19.04
+     }
     },
-    "TSM": {
-     "close": 363.6,
-     "chg_pct": 14.08
-    },
-    "AMD": {
-     "close": 453.46,
-     "chg_pct": 6.85
-    },
-    "AVGO": {
-     "close": 313.55,
-     "chg_pct": 3.0
-    },
-    "MU": {
-     "close": 707.7,
-     "chg_pct": 19.04
-    }
+    "src": "FinMind:USStockPrice"
    }
   },
   "us_vix": {
-   "asof": "2026-11-23",
-   "status": "ok",
-   "src": "FinMind:USStockPrice",
-   "v": {
-    "close": 26.62,
-    "chg": -9.27
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "close": 26.62,
+     "chg": -9.27
+    },
+    "src": "FinMind:USStockPrice"
    }
   },
   "us_yield": {
-   "asof": "2026-11-23",
-   "status": "ok",
-   "src": "FinMind:GovernmentBondsYield",
-   "v": {
-    "y10": 4.92,
-    "y10_chg_bp": 0.0,
-    "y2": 4.63,
-    "y2_chg_bp": 0.0
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "y10": 4.92,
+     "y10_chg_bp": 0.0,
+     "y2": 4.63,
+     "y2_chg_bp": 0.0
+    },
+    "src": "FinMind:GovernmentBondsYield"
    }
   }
  },
@@ -350,7 +376,7 @@
  },
  "health": {
   "alert": false,
-  "token": "valid",
+  "token": "invalid",
   "notes": []
  }
 }
