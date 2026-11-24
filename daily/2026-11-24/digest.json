@@ -1,6 +1,6 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-25T01:41:27+08:00",
+ "generated_at": "2026-11-25T02:58:11+08:00",
  "snapshot_id": "739d40de",
  "calendar": {
   "tw_last": "2026-11-24",
@@ -350,7 +350,7 @@
  },
  "health": {
   "alert": false,
-  "token": "invalid",
+  "token": "valid",
   "notes": []
  }
 }
