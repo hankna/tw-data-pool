@@ -1,0 +1,396 @@
+{
+ "schema": "tw-data-pool/2",
+ "generated_at": "2026-11-24T14:16:48+08:00",
+ "snapshot_id": "35be78bf",
+ "calendar": {
+  "tw_last": "2026-11-24",
+  "tw_prev": "2026-11-23",
+  "tw_next": "2026-11-25",
+  "us_last": "2026-11-23"
+ },
+ "items": {
+  "taiex": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "open": 35899.48,
+     "high": 37108.2,
+     "low": 35442.41,
+     "close": 36811.89,
+     "chg": 778.6,
+     "chg_pct": 2.16,
+     "turnover_bn": 11137.43
+    },
+    "src": "FinMind:TaiwanStockPrice"
+   }
+  },
+  "tpex": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "close": 270.9,
+     "chg_pct": 2.88
+    },
+    "src": "FinMind:TaiwanStockPrice"
+   }
+  },
+  "inst_spot": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "foreign_bn": -289.48,
+     "trust_bn": -41.55,
+     "dealer_bn": -190.01,
+     "dealer_self_bn": -28.99,
+     "dealer_hedge_bn": -161.02,
+     "total_bn": -521.04
+    },
+    "src": "TWSE:BFI82U"
+   }
+  },
+  "fut_inst": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "dealer": {
+      "net_oi": 1318,
+      "chg": 1036
+     },
+     "trust": {
+      "net_oi": 93565,
+      "chg": 5966
+     },
+     "foreign": {
+      "net_oi": -103432,
+      "chg": -5569
+     }
+    },
+    "src": "TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFuturesContractsBytheDate"
+   }
+  },
+  "opt_inst": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "foreign": {
+      "call_net_oi": 13425,
+      "call_net_oi_amt_k": 1240202,
+      "put_net_oi": 751,
+      "put_net_oi_amt_k": 256665
+     }
+    },
+    "src": "FinMind:TaiwanOptionInstitutionalInvestors"
+   }
+  },
+  "tx_day": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "contract": "202612",
+     "open": 35000.0,
+     "high": 37119.0,
+     "low": 34828.0,
+     "close": 36576.0,
+     "settle": 36659.0,
+     "chg": 776.0,
+     "volume": 123056,
+     "oi": 133027,
+     "basis": -235.89
+    },
+    "src": "TAIFEX:futDataDown"
+   }
+  },
+  "txo_oi": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "expiring_today": [],
+     "monthly": "202612",
+     "weekly": "202611W4",
+     "top": {
+      "202612": {
+       "call": [
+        [
+         50000,
+         1860
+        ],
+        [
+         49000,
+         1656
+        ],
+        [
+         40000,
+         1476
+        ]
+       ],
+       "put": [
+        [
+         49800,
+         3399
+        ],
+        [
+         25200,
+         1901
+        ],
+        [
+         28000,
+         998
+        ]
+       ]
+      },
+      "202611W4": {
+       "call": [
+        [
+         41000,
+         10101
+        ],
+        [
+         43000,
+         5476
+        ],
+        [
+         40000,
+         3496
+        ]
+       ],
+       "put": [
+        [
+         32400,
+         2832
+        ],
+        [
+         34500,
+         2011
+        ],
+        [
+         34000,
+         1026
+        ]
+       ]
+      }
+     },
+     "oi_sum_excl_expiring": {
+      "call": 140388,
+      "put": 43378
+     }
+    },
+    "src": "FinMind:TaiwanOptionDaily"
+   }
+  },
+  "pc_ratio": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "oi_pct": 30.9,
+     "vol_pct": null,
+     "put_oi": 43378,
+     "call_oi": 140388
+    },
+    "src": "derived:txo_oi（排除當日到期）"
+   }
+  },
+  "large_traders": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "scope": "TX+MTX/4 全部月份",
+     "all": {
+      "top5_buy": 96856,
+      "top5_sell": 72681,
+      "top10_buy": 105246,
+      "top10_sell": 100788
+     },
+     "specific": {
+      "top5_buy": 96856,
+      "top5_sell": 72681,
+      "top10_buy": 103944,
+      "top10_sell": 100788
+     },
+     "market_oi": 140713
+    },
+    "src": "TAIFEX:openapi/OpenInterestOfLargeTradersFutures"
+   }
+  },
+  "vix": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "close": 55.36,
+     "close_1min_avg": 55.47,
+     "chg": 3.23
+    },
+    "src": "TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt"
+   }
+  },
+  "margin": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "balance_bn": 4338.08,
+     "chg_bn": -14.2,
+     "short_balance": 172957,
+     "short_chg": -26834
+    },
+    "src": "TWSE:MI_MARGN"
+   }
+  },
+  "usd_twd": {
+   "status": "pending",
+   "asof": null,
+   "prev": {
+    "asof": "2026-11-23",
+    "v": {
+     "spot_buy": 32.85,
+     "spot_sell": 32.95,
+     "mid": 32.9
+    },
+    "src": "FinMind:TaiwanExchangeRate"
+   }
+  },
+  "tx_night": {
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "TAIFEX:futDataDown",
+   "v": {
+    "trading_date": "2026-11-24",
+    "session": "11/23 15:00～11/24 05:00",
+    "contract": "202612",
+    "open": 36671.0,
+    "high": 40324.0,
+    "low": 36280.0,
+    "close": 39829.0,
+    "chg": 3170.0,
+    "chg_pct": 8.65,
+    "volume": 92939
+   }
+  },
+  "us_index": {
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "^GSPC": {
+     "close": 7237.17,
+     "chg_pct": 4.73
+    },
+    "^IXIC": {
+     "close": 24089.56,
+     "chg_pct": 6.51
+    },
+    "^DJI": {
+     "close": 49595.31,
+     "chg_pct": 3.01
+    },
+    "^SOX": {
+     "close": 9588.05,
+     "chg_pct": 14.03
+    }
+   }
+  },
+  "us_stock": {
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "NVDA": {
+     "close": 165.05,
+     "chg_pct": 31.48
+    },
+    "TSM": {
+     "close": 363.6,
+     "chg_pct": 14.08
+    },
+    "AMD": {
+     "close": 453.46,
+     "chg_pct": 6.85
+    },
+    "AVGO": {
+     "close": 313.55,
+     "chg_pct": 3.0
+    },
+    "MU": {
+     "close": 707.7,
+     "chg_pct": 19.04
+    }
+   }
+  },
+  "us_vix": {
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "close": 26.62,
+    "chg": -9.27
+   }
+  },
+  "us_yield": {
+   "status": "missing",
+   "asof": null,
+   "notes": [
+    "逾預計時間 4 小時仍未公布"
+   ]
+  }
+ },
+ "derived": {
+  "rv20_annual_pct": null,
+  "sigma1_rv_pts": null,
+  "sigma1_vix_pts": null,
+  "closes_7": [
+   [
+    "2026-11-13",
+    43675.12
+   ],
+   [
+    "2026-11-16",
+    41040.08
+   ],
+   [
+    "2026-11-17",
+    40092.11
+   ],
+   [
+    "2026-11-18",
+    40194.91
+   ],
+   [
+    "2026-11-19",
+    38426.89
+   ],
+   [
+    "2026-11-20",
+    36033.29
+   ],
+   [
+    "2026-11-23",
+    36811.89
+   ]
+  ]
+ },
+ "health": {
+  "alert": false,
+  "token": "invalid",
+  "notes": []
+ }
+}
