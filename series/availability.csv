@@ -17,6 +17,7 @@ date,item,first_ok_at,src
 2026-11-20,vix,2026-11-22T09:33:08+08:00,TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt
 2026-11-23,fut_inst,2026-11-23T22:18:32+08:00,FinMind:TaiwanFuturesInstitutionalInvestors
 2026-11-23,inst_spot,2026-11-23T22:18:32+08:00,TWSE:BFI82U
+2026-11-23,large_traders,2026-11-24T09:02:01+08:00,TAIFEX:openapi/OpenInterestOfLargeTradersFutures
 2026-11-23,margin,2026-11-23T22:18:32+08:00,TWSE:MI_MARGN
 2026-11-23,opt_inst,2026-11-23T22:18:32+08:00,FinMind:TaiwanOptionInstitutionalInvestors
 2026-11-23,pc_ratio,2026-11-23T22:18:32+08:00,derived:txo_oi（排除當日到期）
@@ -25,6 +26,9 @@ date,item,first_ok_at,src
 2026-11-23,tx_day,2026-11-23T22:18:32+08:00,TAIFEX:futDataDown
 2026-11-23,tx_night,2026-11-22T09:33:08+08:00,TAIFEX:futDataDown
 2026-11-23,txo_oi,2026-11-23T22:18:32+08:00,FinMind:TaiwanOptionDaily
+2026-11-23,us_index,2026-11-24T09:02:01+08:00,FinMind:USStockPrice
+2026-11-23,us_stock,2026-11-24T09:02:01+08:00,FinMind:USStockPrice
+2026-11-23,us_vix,2026-11-24T09:02:01+08:00,FinMind:USStockPrice
 2026-11-23,usd_twd,2026-11-23T22:18:32+08:00,FinMind:TaiwanExchangeRate
 2026-11-23,vix,2026-11-23T22:18:32+08:00,TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt
 2026-11-24,tx_night,2026-11-24T05:38:50+08:00,TAIFEX:futDataDown

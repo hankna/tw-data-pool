@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-24T05:38:50+08:00",
- "snapshot_id": "7b1f9166",
+ "generated_at": "2026-11-24T09:02:01+08:00",
+ "snapshot_id": "75cddbbd",
  "calendar": {
   "tw_last": "2026-11-23",
   "tw_prev": "2026-11-20",
@@ -186,11 +186,25 @@
    }
   },
   "large_traders": {
-   "status": "missing",
-   "asof": null,
-   "notes": [
-    "逾預計時間 4 小時仍未公布"
-   ]
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "TAIFEX:openapi/OpenInterestOfLargeTradersFutures",
+   "v": {
+    "scope": "TX+MTX/4 全部月份",
+    "all": {
+     "top5_buy": 96856,
+     "top5_sell": 72681,
+     "top10_buy": 105246,
+     "top10_sell": 100788
+    },
+    "specific": {
+     "top5_buy": 96856,
+     "top5_sell": 72681,
+     "top10_buy": 103944,
+     "top10_sell": 100788
+    },
+    "market_oi": 140713
+   }
   },
   "vix": {
    "asof": "2026-11-23",
@@ -243,86 +257,67 @@
    }
   },
   "us_index": {
-   "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-20",
-    "v": {
-     "^GSPC": {
-      "close": 6910.39,
-      "chg_pct": -3.7
-     },
-     "^IXIC": {
-      "close": 22617.73,
-      "chg_pct": -5.28
-     },
-     "^DJI": {
-      "close": 48147.33,
-      "chg_pct": -1.93
-     },
-     "^SOX": {
-      "close": 8408.59,
-      "chg_pct": -10.73
-     }
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "^GSPC": {
+     "close": 7237.17,
+     "chg_pct": 4.73
     },
-    "src": "FinMind:USStockPrice"
+    "^IXIC": {
+     "close": 24089.56,
+     "chg_pct": 6.51
+    },
+    "^DJI": {
+     "close": 49595.31,
+     "chg_pct": 3.01
+    },
+    "^SOX": {
+     "close": 9588.05,
+     "chg_pct": 14.03
+    }
    }
   },
   "us_stock": {
-   "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-20",
-    "v": {
-     "NVDA": {
-      "close": 125.53,
-      "chg_pct": -14.01
-     },
-     "TSM": {
-      "close": 318.71,
-      "chg_pct": -9.48
-     },
-     "AMD": {
-      "close": 424.39,
-      "chg_pct": -13.25
-     },
-     "AVGO": {
-      "close": 304.41,
-      "chg_pct": -12.19
-     },
-     "MU": {
-      "close": 594.51,
-      "chg_pct": -13.89
-     }
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "NVDA": {
+     "close": 165.05,
+     "chg_pct": 31.48
     },
-    "src": "FinMind:USStockPrice"
+    "TSM": {
+     "close": 363.6,
+     "chg_pct": 14.08
+    },
+    "AMD": {
+     "close": 453.46,
+     "chg_pct": 6.85
+    },
+    "AVGO": {
+     "close": 313.55,
+     "chg_pct": 3.0
+    },
+    "MU": {
+     "close": 707.7,
+     "chg_pct": 19.04
+    }
    }
   },
   "us_vix": {
-   "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-20",
-    "v": {
-     "close": 35.89,
-     "chg": 7.45
-    },
-    "src": "FinMind:USStockPrice"
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "close": 26.62,
+    "chg": -9.27
    }
   },
   "us_yield": {
    "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-20",
-    "v": {
-     "y10": 4.92,
-     "y10_chg_bp": -12.0,
-     "y2": 4.63,
-     "y2_chg_bp": -13.0
-    },
-    "src": "FinMind:GovernmentBondsYield"
-   }
+   "asof": null
   }
  },
  "derived": {
@@ -362,7 +357,7 @@
  },
  "health": {
   "alert": false,
-  "token": "valid",
+  "token": "invalid",
   "notes": []
  }
 }
