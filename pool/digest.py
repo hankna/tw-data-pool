@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from . import calendar as cal_mod, txo as txo_mod, validate
 from .derive import derive
-from .sources import Ctx, finmind, taifex, tpex, twse
+from .sources import Ctx, bot, finmind, taifex, tpex, twse
 from .util import NotYet, SourceError, iso, parse_date
 
 CATALOG = Path(__file__).with_name("catalog.json")
@@ -48,13 +48,13 @@ REG = {
     "large_traders": {"TAIFEX": taifex.large_traders},
     "vix": {"TAIFEX": taifex.vix},
     "margin": {"TWSE": twse.margin, "FinMind": finmind.margin},
-    "usd_twd": {"FinMind": finmind.usd_twd},
+    "usd_twd": {"BOT": bot.usd_twd, "FinMind": finmind.usd_twd},
     "us_index": {"FinMind": finmind.us_index},
     "us_stock": {"FinMind": finmind.us_stock},
     "us_vix": {"FinMind": finmind.us_vix},
     "us_yield": {"FinMind": finmind.us_yield},
 }
-OFFICIAL = {"TWSE", "TAIFEX", "TPEx", "derived"}
+OFFICIAL = {"TWSE", "TAIFEX", "TPEx", "BOT", "derived"}
 
 
 def chain(name: str, cfg: dict, policy: str):

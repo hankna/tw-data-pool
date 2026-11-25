@@ -15,6 +15,7 @@ ALLOWED = {
     "www.tpex.org.tw",
     "openapi.taifex.com.tw",
     "www.taifex.com.tw",
+    "rate.bot.com.tw",
 }
 MAX_BYTES = 8 * 1024 * 1024
 FINMIND = "https://api.finmindtrade.com/api/v4/data"

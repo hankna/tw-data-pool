@@ -86,10 +86,10 @@ GitHub Actions（每天 9 次，見第 5 節）
 | tx_day、tx_night | 期交所 futDataDown | FinMind | 夜盤歸屬下一個交易日；近月取 6 碼最小者 |
 | txo_oi | FinMind（逐履約價） | 期交所 optDataDown | 排除當日到期契約；週選有 W（週三）與 F（週五）兩種 |
 | pc_ratio | 期交所 OpenAPI | 由 txo_oi 自算 | 兩者必須相等，當作 txo_oi 的檢核 |
-| large_traders | 期交所 OpenAPI | 無 | 取 TX、全部月份（999912） |
+| large_traders | 期交所 OpenAPI | 期交所 largeTraderFutDown CSV（OpenAPI 晚一天時） | 取 TX、全部月份（OpenAPI 999912、CSV 999999）；2026-11-24 兩來源逐欄相同 |
 | vix | 期交所月檔 | FinMind（需金鑰） | Big5、Tab 分隔 |
 | margin | 證交所 MI_MARGN | FinMind | 單位仟元與元 |
-| usd_twd | FinMind | 無 | 這是臺銀牌告，不是台北外匯經紀收盤價 |
+| usd_twd | 臺灣銀行牌告匯率 CSV（rate.bot.com.tw/xrt/flcsv/0/日期） | FinMind | 這是臺銀牌告，不是台北外匯經紀收盤價；2026-11-20 兩來源逐欄相同（2026-11-25 起官方優先） |
 | us_index、us_stock、us_vix、us_yield | FinMind | 無（報告自行外搜） | 台灣 06:00 後才更新 |
 
 不在範圍：盤中資料（照舊讀主機快照 `midday_latest.json`、`day_path_latest.json`）、新聞與事件、原油黃金比特幣、Apollo、SemiAnalysis、個股。

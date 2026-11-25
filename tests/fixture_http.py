@@ -70,6 +70,8 @@ class FixtureHttp:
                 raise SourceError(f"{k} 模擬失效")
         if "futDataDown" in url:
             return self._load("taifex_futDataDown_TX_" + post["queryStartDate"].replace("/", "") + ".csv")
+        if "rate.bot.com.tw/xrt/flcsv/0/" in url:   # 臺灣銀行牌告匯率（樣本只含 USD 一列，遠期欄以 0 表示無報價）
+            return self._load("bot_flcsv_" + url.rsplit("/", 1)[1] + ".csv")
         if "vix/log2data" in url:
             if url.endswith("202611new.txt"):
                 return self._load("taifex_vix_202611new.txt")

@@ -323,3 +323,39 @@ def test_reader_no_alert_soon_after_due(tmp_path, monkeypatch):
     # 加權預計 14:10 公布，14:30 還要讀穿屬正常，不算排程失靈
     r = _read(tmp_path, _setup(tmp_path, monkeypatch), "2026-11-25T14:30:00+08:00")
     assert "taiex" not in r["read"]["late"]
+
+
+# ---- 新台幣匯率：臺灣銀行官方優先、FinMind 備援 ----
+def test_usd_twd_prefers_bank_of_taiwan():
+    from tests.test_golden import build, GOLD
+    from tests.compare import diff
+    out, _ = build()
+    e = out["items"]["usd_twd"]
+    assert e["status"] == "ok" and e["src"].startswith("BOT:") and e["asof"] == "2026-11-20"
+    assert diff(e["v"], GOLD["items"]["usd_twd"]["v"]) == []
+
+
+def test_usd_twd_falls_back_to_finmind():
+    from tests.test_golden import build, GOLD
+    from tests.compare import diff
+    out, _ = build(off={"rate.bot.com.tw"})
+    e = out["items"]["usd_twd"]
+    assert e["status"] == "ok" and e["src"].startswith("FinMind:")
+    assert diff(e["v"], GOLD["items"]["usd_twd"]["v"]) == []
+
+
+def test_bot_rejects_unexpected_layout_and_missing_usd():
+    from pool.sources import Ctx, bot
+    from pool.util import NotYet, SourceError
+
+    class H:
+        def __init__(self, text):
+            self.text = text
+
+        def bytes(self, url, params=None, post=None):
+            return self.text.encode("utf-8-sig")
+    mk = lambda t: Ctx(http=H(t), cal={"tw_last": "2026-11-20"}, now=dt.datetime(2026, 11, 20, 17, 0, tzinfo=TW))  # noqa: E731
+    with pytest.raises(NotYet):
+        bot.usd_twd(mk("幣別,匯率\nJPY,本行買入,0.2,0.21,0,0,0,0,0,0,0,本行賣出,0.22,0.215\n"))
+    with pytest.raises(SourceError):
+        bot.usd_twd(mk("幣別\nUSD,買,32.5,32.9,0,0,0,0,0,0,0,賣,33.2,32.99\n"))
