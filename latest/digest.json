@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-26T05:12:07+08:00",
- "snapshot_id": "534f9e46",
+ "generated_at": "2026-11-26T06:02:08+08:00",
+ "snapshot_id": "d6be5dcb",
  "calendar": {
   "tw_last": "2026-11-25",
   "tw_prev": "2026-11-24",
@@ -250,106 +250,37 @@
    "rev": 0
   },
   "tx_night": {
-   "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-25",
-    "v": {
-     "trading_date": "2026-11-25",
-     "session": "11/24 15:00～11/25 05:00",
-     "contract": "202612",
-     "open": 40772.0,
-     "high": 40900.0,
-     "low": 37730.0,
-     "close": 38482.0,
-     "chg": -1842.0,
-     "chg_pct": -4.57,
-     "volume": 95642
-    },
-    "src": "TAIFEX:futDataDown"
+   "asof": "2026-11-26",
+   "status": "ok",
+   "src": "TAIFEX:futDataDown",
+   "v": {
+    "trading_date": "2026-11-26",
+    "session": "11/25 15:00～11/26 05:00",
+    "contract": "202612",
+    "open": 37868.0,
+    "high": 38397.0,
+    "low": 35933.0,
+    "close": 38397.0,
+    "chg": 274.0,
+    "chg_pct": 0.72,
+    "volume": 79451
    }
   },
   "us_index": {
    "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-24",
-    "v": {
-     "^GSPC": {
-      "close": 7201.09,
-      "chg_pct": -0.5
-     },
-     "^IXIC": {
-      "close": 23733.54,
-      "chg_pct": -1.48
-     },
-     "^DJI": {
-      "close": 50018.7,
-      "chg_pct": 0.85
-     },
-     "^SOX": {
-      "close": 8832.5,
-      "chg_pct": -7.88
-     }
-    },
-    "src": "FinMind:USStockPrice"
-   }
+   "asof": null
   },
   "us_stock": {
    "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-24",
-    "v": {
-     "NVDA": {
-      "close": 155.38,
-      "chg_pct": -5.86
-     },
-     "TSM": {
-      "close": 349.2,
-      "chg_pct": -3.96
-     },
-     "AMD": {
-      "close": 413.27,
-      "chg_pct": -8.86
-     },
-     "AVGO": {
-      "close": 301.08,
-      "chg_pct": -3.98
-     },
-     "MU": {
-      "close": 629.79,
-      "chg_pct": -11.01
-     }
-    },
-    "src": "FinMind:USStockPrice"
-   }
+   "asof": null
   },
   "us_vix": {
    "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-24",
-    "v": {
-     "close": 26.36,
-     "chg": -0.26
-    },
-    "src": "FinMind:USStockPrice"
-   }
+   "asof": null
   },
   "us_yield": {
    "status": "pending",
-   "asof": null,
-   "prev": {
-    "asof": "2026-11-24",
-    "v": {
-     "y10": 4.91,
-     "y10_chg_bp": -1.0,
-     "y2": 4.63,
-     "y2_chg_bp": 0.0
-    },
-    "src": "FinMind:GovernmentBondsYield"
-   }
+   "asof": null
   }
  },
  "derived": {
