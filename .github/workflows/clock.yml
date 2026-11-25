@@ -1,0 +1,26 @@
+name: clock
+# 準時觸發 pool.yml：GitHub 排程在本 repo 實測延遲 6～12 小時，改由這個 job 睡到各時段再送出
+# workflow_dispatch（不經排程佇列）。每個 job 約 5 小時 45 分，結束前 dispatch 自己接棒。
+# 下面的 cron 只當斷鏈後的備援；就算它延遲幾小時，一啟動就會先補跑一次，再接回時刻表。
+# 公開 repo 的 GitHub 託管 runner 不計費。
+on:
+  schedule:
+    - cron: "41 */3 * * *"
+  workflow_dispatch:
+concurrency:
+  group: clock          # 同時只有一個時鐘在跑，多出來的只會排隊（較舊的排隊會被取消），不會分叉
+  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: write        # 用 GITHUB_TOKEN 觸發 workflow_dispatch（GitHub 允許這類事件再觸發工作流程）
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - name: 時鐘
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 tools/clock.py --budget-min 345

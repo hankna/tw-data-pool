@@ -1,5 +1,7 @@
 name: pool
 # 對帳式抓取：每次只補「已到預計公布時間、但還不是 ok」的項目。時間為台灣時間，cron 為 UTC。
+# 下列 cron 是時刻表的唯一真相：clock.yml 照它準時送出 workflow_dispatch（slot＝cron 字串）。
+# GitHub 自己的排程實測延遲 6～12 小時，保留只當備援。
 on:
   schedule:
     - cron: "12 21 * * 1-5"   # 05:12 週二～六（夜盤收盤；順便重抓前一日關鍵項目偵測修訂）
@@ -16,6 +18,7 @@ on:
       date:    { description: "指定資料日 YYYY-MM-DD（留空＝現在）", required: false, default: "" }
       items:   { description: "只補這些項目，逗號分隔（留空＝全部）", required: false, default: "" }
       force:   { description: "強制重抓（true/false）", required: false, default: "false" }
+      slot:    { description: "時鐘觸發的時段（cron 字串，或 catch-up）；手動留空", required: false, default: "" }
 concurrency:
   group: data-branch
   cancel-in-progress: false
@@ -41,7 +44,11 @@ jobs:
           IN_DATE: ${{ github.event.inputs.date }}
           IN_ITEMS: ${{ github.event.inputs.items }}
           IN_FORCE: ${{ github.event.inputs.force }}
+          IN_SLOT: ${{ github.event.inputs.slot }}
         run: |
+          # 時鐘觸發：trigger 記為 clock，時段沿用 cron 字串計算排程延遲
+          [ -n "$IN_SLOT" ] && EVENT=clock
+          [ -n "$IN_SLOT" ] && [ "$IN_SLOT" != "catch-up" ] && SCHED="$IN_SLOT"
           args=(--data-dir ../data --trigger "$EVENT")
           [ -n "$SCHED" ] && args+=(--cron "$SCHED")
           [ -n "$IN_DATE" ] && args+=(--date "$IN_DATE")

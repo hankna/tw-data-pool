@@ -18,6 +18,7 @@ from .util import iso, parse_date
 
 DONE = ("ok", "conflict")
 TIMEOUT_H = 4   # 過預計公布時間 4 小時仍未公布，由 pending 改標 missing（會觸發警示）
+CLOCK_LATE_MIN = 30   # 時鐘觸發的執行晚於時段這麼多分鐘，health 標警示
 
 
 def load_days(http, store: Store, today: dt.date, refresh: bool = False):
@@ -117,8 +118,14 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     for e in items.values():
         e.pop("fresh", None)
     bad = [n for n, e in items.items() if cat["items"][n].get("key") and e["status"] in ("missing", "conflict")]
-    health = {"alert": bool(bad), "token": getattr(http, "token_state", "none"),
-              "notes": notes + [f"{n}：{items[n]['status']}" for n in bad]}
+    delay = ""
+    if scheduled_for:
+        delay = round((now - cal_mod.parse_now(scheduled_for)).total_seconds() / 60, 1)
+    # 時鐘觸發卻晚到，代表 clock.yml 的鏈出了問題；GitHub 自己的 cron（備援）本來就會晚，不列入
+    late = trigger == "clock" and delay != "" and delay > CLOCK_LATE_MIN
+    health = {"alert": bool(bad) or late, "token": getattr(http, "token_state", "none"),
+              "notes": notes + [f"{n}：{items[n]['status']}" for n in bad]
+              + ([f"時鐘觸發延遲 {delay} 分（應於 {scheduled_for[11:16]} 執行）"] if late else [])}
     out = {"schema": cat["schema"], "generated_at": now.isoformat(timespec="seconds"),
            "snapshot_id": dg.snapshot_id(items, derived),
            "calendar": {k: v for k, v in cal.items() if not k.startswith("_")},
@@ -130,9 +137,6 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
         store.write_digest(out, cal["tw_last"])
         changed = True
     cnt = lambda s: sum(1 for e in items.values() if e["status"] == s)
-    delay = ""
-    if scheduled_for:
-        delay = round((now - cal_mod.parse_now(scheduled_for)).total_seconds() / 60, 1)
     store.log_run({"run_at": now.isoformat(timespec="seconds"), "trigger": trigger, "scheduled_for": scheduled_for or "",
                    "delay_min": delay, "filled": filled,
                    "pending": cnt("pending"), "missing": cnt("missing"), "conflict": cnt("conflict"),

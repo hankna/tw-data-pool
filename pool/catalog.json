@@ -176,7 +176,7 @@
    "group": "tw_close",
    "due": "16:30",
    "sources": [
-    "TAIFEX:openapi/OpenInterestOfLargeTradersFutures"
+    "TAIFEX:openapi/OpenInterestOfLargeTradersFutures（目標日未到改讀 largeTraderFutDown CSV）"
    ],
    "fields": {
     "scope": "Contract=TX（臺股期貨 TX+MTX/4）、SettlementMonth=999912（全部月份）",

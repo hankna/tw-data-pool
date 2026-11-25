@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 REPO = "hankna/tw-data-pool"
 STALE_HOURS = 26
+LATE_MIN = 60   # 關鍵項目過預計公布時間這麼久還要讀穿，判定資料池排程失靈並設 health.alert
 DONE = ("ok", "conflict")
 
 
@@ -194,25 +195,63 @@ def main(argv=None, http=None) -> int:
     for e in out_items.values():
         if e.get("src"):
             e["src_zh"] = src_zh(e["src"])
-    hist = []
+
+    # 資料池沒按時更新：已過預計公布時間 LATE_MIN 分鐘的關鍵項目，還要靠讀穿或仍缺，就是排程出問題（不是交易所晚公布）
+    late = []
+    for name in via_direct + missing:
+        cfg = cat["items"][name]
+        if not cfg.get("key"):
+            continue
+        try:
+            due = cal_mod.due_at(cfg["group"], cfg["due"], cal)
+        except Exception:  # noqa: BLE001
+            continue
+        if now > due + dt.timedelta(minutes=LATE_MIN):
+            late.append(name)
+
+    hist, series = [], []
     try:
         import csv, io
-        rows = list(csv.DictReader(io.StringIO(read_data_file("series/taiex_daily.csv", a.data_dir).decode("utf-8"))))
-        hist = [[r["date"], *(float(r[k]) if r[k] else None for k in ("open", "high", "low", "close"))]
-                for r in rows if r["date"] <= cal["tw_last"]][-60:]
+        series = [r for r in csv.DictReader(io.StringIO(read_data_file("series/taiex_daily.csv", a.data_dir).decode("utf-8")))
+                  if r["date"] <= cal["tw_last"]]
+        hist = [[r["date"], *(float(r[k]) if r[k] else None for k in ("open", "high", "low", "close"))] for r in series][-60:]
     except Exception:  # noqa: BLE001
         notes.append("讀不到加權指數歷史序列")
+    tx = out_items.get("taiex") or {}
+    if tx.get("status") in DONE and tx.get("asof") == cal["tw_last"] and (not hist or hist[-1][0] != cal["tw_last"]):
+        # 讀穿取得的當日加權：補進近 60 日序列，報告才有今天這根
+        v = tx["v"]
+        hist = (hist + [[tx["asof"], v.get("open"), v.get("high"), v.get("low"), v.get("close")]])[-60:]
+        series = series + [{"date": tx["asof"], "close": v.get("close")}]
     ex = 3 if (digest is None and not via_direct) else 2 if missing else 1 if via_direct else 0
+    derived = (digest or {}).get("derived") if (digest and "taiex" not in via_direct and not stale) else None
+    derived_via = "pool" if derived else None
+    if derived is None and tx.get("status") in DONE and tx.get("asof") == cal["tw_last"] and series:
+        # 加權是讀穿來的：用同一支 derive() 在本機算，定義與資料池完全相同
+        from pool.derive import derive
+        vx = out_items.get("vix") or {}
+        vc = vx["v"]["close"] if vx.get("status") in DONE and vx.get("asof") == cal["tw_last"] else None
+        try:
+            derived = derive(series, tx["v"]["close"], vc, cal["tw_last"])
+            derived_via = "direct"
+        except Exception as e:  # noqa: BLE001
+            notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
+    health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
+    if late:
+        health["alert"] = True
+        health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺），"
+                           f"快照產生於 {(digest or {}).get('generated_at') or '無'}"] + list(health.get("notes") or [])
     result = {
         "snapshot_id": (digest or {}).get("snapshot_id"), "generated_at": (digest or {}).get("generated_at"),
         "profile": a.profile, "date": a.date, "read_at": now.isoformat(timespec="seconds"),
         "calendar": {k: v for k, v in cal.items() if not k.startswith("_")},
         "items": out_items,
-        "derived": (digest or {}).get("derived") if (digest and "taiex" not in via_direct and not stale) else None,
+        "derived": derived,
+        "derived_via": derived_via,
         "taiex_hist": hist,
         "taiex_hist_cols": ["date", "open", "high", "low", "close"],
-        "health": (digest or {}).get("health"),
-        "read": {"exit": ex, "via_direct": via_direct, "missing": missing, "notes": notes},
+        "health": health,
+        "read": {"exit": ex, "via_direct": via_direct, "missing": missing, "late": late, "notes": notes},
     }
     Path(a.out).write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n", "utf-8")
 
@@ -223,7 +262,8 @@ def main(argv=None, http=None) -> int:
         print(f"{n}｜{e.get('status', '?')}｜{e.get('asof') or '-'}｜{e.get('via', '-')}｜{e.get('src_zh', '-')}｜{brief(n, e)}")
     d = result["derived"]
     if d:
-        print(f"衍生：rv20={d['rv20_annual_pct']}% 1σ(rv)={d['sigma1_rv_pts']} 1σ(vix)={d['sigma1_vix_pts']}")
+        tag = "（讀穿資料本機計算）" if derived_via == "direct" else ""
+        print(f"衍生{tag}：rv20={d['rv20_annual_pct']}% 1σ(rv)={d['sigma1_rv_pts']} 1σ(vix)={d['sigma1_vix_pts']}")
     elif a.profile != "midday":
         notes.append("衍生值未提供（加權資料非資料池當日版本）")
     for n in notes:
