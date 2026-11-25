@@ -57,6 +57,9 @@ def incomplete(data_dir: Path, now: dt.datetime) -> list[str]:
     with open(data_dir / "series" / "tw_calendar.csv", encoding="utf-8", newline="") as f:
         days = sorted(parse_date(r["date"]) for r in csv.DictReader(f))
     tw_now = now.astimezone(cal_mod.TZ)
+    if not cal_mod.enough(days, tw_now.date()):
+        # 快取日曆涵蓋不足（pool.run 此時會嘗試更新）：目標日可能算錯，視為無法確認，照常執行
+        raise ValueError("交易日曆快取過期")
     cal = cal_mod.compute(tw_now, days)
     items = json.loads((data_dir / "latest" / "digest.json").read_text("utf-8")).get("items", {})
     out = []

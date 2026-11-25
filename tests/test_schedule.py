@@ -196,6 +196,19 @@ def test_gate_runs_when_slot_done_but_due_items_still_missing(tmp_path):
     assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row, digest=False)["skip"] == "false"
 
 
+def test_gate_runs_when_cached_calendar_is_stale(tmp_path):
+    # 日曆快取只到 11/24：目標日可能算錯（digest 看似齊全），視為無法確認、照常執行
+    row = "2026-11-25T21:52:40+08:00,clock,2026-11-25T21:52:00+08:00,0.7,"
+    _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row)
+    cal = tmp_path / "series" / "tw_calendar.csv"
+    cal.write_text("\n".join(ln for ln in cal.read_text("utf-8").splitlines() if ln < "2026-11-25") + "\n", "utf-8")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        gate.main(["--cron", "52 13 * * 1-5", "--data-dir", str(tmp_path), "--now", "2026-11-26T06:10:00+08:00"])
+    assert "skip=false" in buf.getvalue()
+
+
 def test_gate_recheck_slot_needs_successful_recheck(tmp_path):
     slot = "2026-11-26T05:12:40+08:00,clock,2026-11-26T05:12:00+08:00,0.7,"
     run = lambda note: _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00", slot + note, recheck=True)  # noqa: E731
