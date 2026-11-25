@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-25T07:17:43+08:00",
- "snapshot_id": "d7124f1c",
+ "generated_at": "2026-11-25T12:06:54+08:00",
+ "snapshot_id": "b04b8d96",
  "calendar": {
   "tw_last": "2026-11-24",
   "tw_prev": "2026-11-23",
@@ -22,7 +22,8 @@
     "chg_pct": 8.99,
     "turnover_bn": 4325.6
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "tpex": {
    "asof": "2026-11-24",
@@ -45,7 +46,8 @@
     "dealer_hedge_bn": -826.11,
     "total_bn": -1216.52
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "fut_inst": {
    "asof": "2026-11-24",
@@ -65,7 +67,8 @@
      "chg": -1551
     }
    },
-   "xcheck": "n/a"
+   "xcheck": "n/a",
+   "rev": 0
   },
   "opt_inst": {
    "asof": "2026-11-24",
@@ -172,18 +175,20 @@
      "put": 75094
     }
    },
-   "xcheck": "n/a"
+   "xcheck": "match",
+   "rev": 0
   },
   "pc_ratio": {
    "asof": "2026-11-24",
    "status": "ok",
-   "src": "derived:txo_oi（排除當日到期）",
+   "src": "TAIFEX:openapi/PutCallRatio",
    "v": {
     "oi_pct": 45.96,
-    "vol_pct": null,
+    "vol_pct": 65.3,
     "put_oi": 75094,
     "call_oi": 163394
-   }
+   },
+   "rev": 1
   },
   "large_traders": {
    "asof": "2026-11-24",
@@ -214,7 +219,8 @@
     "close": 26.18,
     "close_1min_avg": 26.07,
     "chg": -29.18
-   }
+   },
+   "rev": 0
   },
   "margin": {
    "asof": "2026-11-24",
@@ -226,7 +232,8 @@
     "short_balance": 186613,
     "short_chg": 13656
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "usd_twd": {
    "asof": "2026-11-24",
@@ -257,20 +264,70 @@
    }
   },
   "us_index": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "^GSPC": {
+     "close": 7201.09,
+     "chg_pct": -0.5
+    },
+    "^IXIC": {
+     "close": 23733.54,
+     "chg_pct": -1.48
+    },
+    "^DJI": {
+     "close": 50018.7,
+     "chg_pct": 0.85
+    },
+    "^SOX": {
+     "close": 8832.5,
+     "chg_pct": -7.88
+    }
+   }
   },
   "us_stock": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "NVDA": {
+     "close": 155.38,
+     "chg_pct": -5.86
+    },
+    "TSM": {
+     "close": 349.2,
+     "chg_pct": -3.96
+    },
+    "AMD": {
+     "close": 413.27,
+     "chg_pct": -8.86
+    },
+    "AVGO": {
+     "close": 301.08,
+     "chg_pct": -3.98
+    },
+    "MU": {
+     "close": 629.79,
+     "chg_pct": -11.01
+    }
+   }
   },
   "us_vix": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "close": 26.36,
+    "chg": -0.26
+   }
   },
   "us_yield": {
-   "status": "pending",
-   "asof": null
+   "status": "missing",
+   "asof": null,
+   "notes": [
+    "逾預計時間 4 小時仍未公布"
+   ]
   }
  },
  "derived": {
@@ -311,6 +368,8 @@
  "health": {
   "alert": false,
   "token": "invalid",
-  "notes": []
+  "notes": [
+   "pc_ratio 修訂（rev 1）"
+  ]
  }
 }
