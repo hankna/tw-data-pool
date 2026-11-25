@@ -27,10 +27,21 @@ class HttpStatus(SourceError):
         self.code = code
 
 
+def _origin(url: str) -> tuple:
+    u = urllib.parse.urlsplit(url)
+    return u.scheme.lower(), u.hostname, u.port or {"http": 80, "https": 443}.get(u.scheme.lower())
+
+
 class _NoCrossHost(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if urllib.parse.urlsplit(newurl).hostname != urllib.parse.urlsplit(req.full_url).hostname:
+        old, new = _origin(req.full_url), _origin(urllib.parse.urljoin(req.full_url, newurl))
+        if new[1] != old[1]:
             raise SourceError("拒絕跨網域轉址")
+        if old[0] == "https" and new[0] != "https":
+            raise SourceError("拒絕降級為 HTTP 的轉址")
+        # urllib 會把 Authorization 複製到轉址請求：帶金鑰時只允許同來源（scheme、主機、連接埠都相同）的 HTTPS
+        if req.has_header("Authorization") and (new != old or new[0] != "https"):
+            raise SourceError("帶金鑰時拒絕非同來源 HTTPS 的轉址")
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -83,35 +94,44 @@ class Http:
         except ValueError as e:
             raise SourceError(f"非 JSON：{e}") from None
 
+    def _token_invalid(self, why: str, dataset: str) -> None:
+        self.token_state = "invalid"   # 金鑰失效：本次後續請求改免金鑰
+        self.token_reason = f"{why}（{dataset}）"
+
     # ---- FinMind ----
     def finmind(self, dataset: str, data_id: str | None, start: str, end: str) -> list:
         p = {"dataset": dataset, "start_date": start, "end_date": end}
         if data_id:
             p["data_id"] = data_id
-        with_token = False
         if self.token and self.token_state != "invalid":
+            sure = False   # 確定是金鑰被拒（401／403，或回應訊息提到 token）
             try:
-                with_token = True
-                # FinMind v4 只認 Authorization: Bearer 標頭；放網址參數會被拒（HTTP 400），也會讓金鑰出現在網址
+                # FinMind v4 以 Authorization: Bearer 標頭認證；不放網址參數，金鑰才不會出現在網址
                 j = self.json(FINMIND, p, headers={"Authorization": f"Bearer {self.token}"})
-                bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
                 st = j.get("status")
+                bad = sure = st != 200 and "oken" in str(j.get("msg", ""))
                 # 公開資料分支只記代碼，不記 FinMind 回傳的訊息文字（可能回顯金鑰，截斷或編碼後遮蔽會失效）
                 why = f"FinMind status {st}" if isinstance(st, int) and not isinstance(st, bool) else "FinMind 拒絕金鑰"
             except HttpStatus as e:
-                bad = e.code in (400, 401, 403)
-                why = f"HTTP {int(e.code)}"
+                if e.code not in (400, 401, 403):
+                    raise                                   # 其他狀態原樣拋出，不動金鑰狀態
+                bad, sure, why = True, e.code in (401, 403), f"HTTP {int(e.code)}"
             if bad:
-                self.token_state = "invalid"   # 金鑰失效：本次改免金鑰
-                self.token_reason = f"{why}（{dataset}）"
-                with_token = False
-                j = self.json(FINMIND, p)
+                # 改免金鑰重試；400 只有在免金鑰成功時才判定是金鑰的問題（一般參數錯誤也會回 400）
+                try:
+                    anon = self.json(FINMIND, p)
+                except SourceError:
+                    if sure:
+                        self._token_invalid(why, dataset)
+                    raise
+                if sure or anon.get("status") == 200:
+                    self._token_invalid(why, dataset)
+                j = anon
         else:
             j = self.json(FINMIND, p)
         if j.get("status") != 200:
             st = j.get("status")
             code = st if isinstance(st, int) and not isinstance(st, bool) else "?"
-            if with_token:   # 帶金鑰的回應訊息可能回顯金鑰：錯誤會進公開 digest，只留資料集與狀態碼
-                raise SourceError(f"FinMind {dataset}：status {code}")
-            raise SourceError(f"FinMind {dataset}：status {code}：{str(j.get('msg'))[:60]}")
+            # 錯誤會進公開 digest：不論有無金鑰都只留資料集與狀態碼，不照錄上游訊息
+            raise SourceError(f"FinMind {dataset}：status {code}")
         return j.get("data") or []

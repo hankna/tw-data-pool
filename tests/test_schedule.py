@@ -155,6 +155,86 @@ def test_finmind_token_sent_as_bearer_header_not_url(monkeypatch):
     assert h.token_state == "valid"
 
 
+def _redirect(url, newurl, auth):
+    import urllib.request
+    from pool.http import _NoCrossHost
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer SECRET-123"} if auth else {})
+    return _NoCrossHost().redirect_request(req, None, 302, "Found", {}, newurl)
+
+
+@pytest.mark.parametrize("new, auth", [
+    ("http://api.finmindtrade.com/api/v4/data", True),       # 同主機降級為 HTTP
+    ("http://api.finmindtrade.com/api/v4/data", False),
+    ("https://api.finmindtrade.com:8443/api/v4/data", True),  # 帶金鑰換連接埠
+    ("https://evil.example.com/api/v4/data", False),          # 跨主機
+])
+def test_redirect_never_carries_bearer_off_origin(new, auth):
+    from pool.util import SourceError
+    with pytest.raises(SourceError):
+        _redirect("https://api.finmindtrade.com/api/v4/data?dataset=X", new, auth)
+
+
+def test_redirect_same_origin_https_keeps_working():
+    r = _redirect("https://api.finmindtrade.com/api/v4/data?dataset=X", "https://api.finmindtrade.com/api/v4/data?dataset=Y", True)
+    assert r.full_url == "https://api.finmindtrade.com/api/v4/data?dataset=Y"
+    assert _redirect("http://www.taifex.com.tw/a", "https://www.taifex.com.tw/b", False) is not None
+
+
+def _http_seq(*answers):
+    """依序回應：帶金鑰的第一次、免金鑰的第二次；HttpStatus 物件代表丟出例外。"""
+    from pool.http import Http
+    h, seq = Http(token="SECRET-123"), list(answers)
+    def fake_json(url, params=None, headers=None):
+        a = seq.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    h.json = fake_json
+    return h
+
+
+def test_finmind_400_with_anon_failure_keeps_token_valid():
+    # 一般參數錯誤：帶不帶金鑰都 400，不能把金鑰判失效
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(400), HttpStatus(400))
+    with pytest.raises(HttpStatus):
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert h.token_state == "valid" and h.token_reason == ""
+
+
+def test_finmind_400_with_anon_success_marks_token_invalid():
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(400), {"status": 200, "data": [1]})
+    assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [1]
+    assert h.token_state == "invalid" and h.token_reason == "HTTP 400（TaiwanExchangeRate）"
+
+
+def test_finmind_401_marks_invalid_even_if_anon_fails():
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(401), HttpStatus(400))
+    with pytest.raises(HttpStatus):
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert h.token_state == "invalid"
+
+
+def test_finmind_other_4xx_reraised_without_touching_token():
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(404))
+    with pytest.raises(HttpStatus) as ei:
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert ei.value.code == 404 and h.token_state == "valid"
+
+
+def test_finmind_anon_error_never_includes_upstream_message():
+    from pool.http import Http
+    from pool.util import SourceError
+    h = Http(token=None)
+    h.json = lambda url, params=None, headers=None: {"status": 402, "msg": "quota for SECRET-ish value"}
+    with pytest.raises(SourceError) as ei:
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert str(ei.value) == "FinMind TaiwanExchangeRate：status 402"
+
+
 # ---- 備援檢查：只有同一時段已由時鐘處理過才略過 ----
 gate = _load("fallback_gate", "tools/fallback_gate.py")
 
