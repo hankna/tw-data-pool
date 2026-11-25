@@ -142,6 +142,7 @@ def txo_rows(ctx):
 
 def usd_twd(ctx):
     D = ctx.d("tw_last")
+    ctx.not_before(D, "16:30", "FinMind 匯率")   # 與臺銀來源同一門檻：讀穿、強制重抓也不收盤中數值
     rows = _rows(ctx, "TaiwanExchangeRate", "USD", D - dt.timedelta(days=5), D + dt.timedelta(days=1))
     r = _need(rows, D, "匯率")[0]
     return {"spot_buy": r["spot_buy"], "spot_sell": r["spot_sell"], "mid": rnd((r["spot_buy"] + r["spot_sell"]) / 2)}, D

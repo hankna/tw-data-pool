@@ -344,18 +344,62 @@ def test_usd_twd_falls_back_to_finmind():
     assert diff(e["v"], GOLD["items"]["usd_twd"]["v"]) == []
 
 
-def test_bot_rejects_unexpected_layout_and_missing_usd():
+HDR = "幣別,匯率,現金,即期,遠期10天,遠期30天,遠期60天,遠期90天,遠期120天,遠期150天,遠期180天,匯率,現金,即期,遠期10天,遠期30天,遠期60天,遠期90天,遠期120天,遠期150天,遠期180天"
+# 測試用合成資料（多幣別、遠期欄非零），用來確認欄位索引；不是實際牌價
+MULTI = (HDR + "\n"
+         "USD,本行買入,32.72500,33.05000,33.05900,32.99700,32.91700,32.83300,32.74200,32.65700,32.57400,"
+         "本行賣出,33.39500,33.20000,33.16300,33.10900,33.03400,32.95900,32.87700,32.80000,32.72400,\n"
+         "HKD,本行買入,4.07100,4.19200,4.19400,4.18900,4.18300,4.17700,4.17100,4.16500,4.15800,"
+         "本行賣出,4.27500,4.26200,4.25500,4.25300,4.24700,4.24100,4.23700,4.23200,4.22700,\n")
+
+
+class _BotHttp:
+    def __init__(self, text, fname="ExchangeRate@202611201600.csv"):
+        self.text, self.last_headers = text, ({"content-disposition": f"attachment; filename={fname}"} if fname else {})
+
+    def bytes(self, url, params=None, post=None):
+        assert url.endswith("/2026-11-20")
+        return self.text.encode("utf-8-sig")
+
+
+def _bot(text, now=dt.datetime(2026, 11, 20, 17, 0, tzinfo=TW), **kw):
     from pool.sources import Ctx, bot
-    from pool.util import NotYet, SourceError
+    return bot.usd_twd(Ctx(http=_BotHttp(text, **kw), cal={"tw_last": "2026-11-20"}, now=now))
 
-    class H:
-        def __init__(self, text):
-            self.text = text
 
-        def bytes(self, url, params=None, post=None):
-            return self.text.encode("utf-8-sig")
-    mk = lambda t: Ctx(http=H(t), cal={"tw_last": "2026-11-20"}, now=dt.datetime(2026, 11, 20, 17, 0, tzinfo=TW))  # noqa: E731
+def test_bot_reads_spot_columns_from_multi_currency_csv():
+    v, d = _bot(MULTI)
+    assert v == {"spot_buy": 33.05, "spot_sell": 33.2, "mid": 33.13} and d == dt.date(2026, 11, 20)
+
+
+def test_bot_rejects_swapped_columns_wrong_date_and_bad_numbers():
+    from pool.util import SourceError
+    swapped = MULTI.replace("現金,即期", "即期,現金")            # 上游調換現金與即期欄：標記仍在原位，必須擋下
+    for text, kw in [(swapped, {}), (MULTI, {"fname": "ExchangeRate@202611191600.csv"}),
+                     (MULTI.replace("33.05000", "N/A"), {})]:
+        with pytest.raises(SourceError):
+            _bot(text, **kw)
+
+
+def test_bot_no_data_text_and_zero_spot_are_not_yet():
+    from pool.util import NotYet
     with pytest.raises(NotYet):
-        bot.usd_twd(mk("幣別,匯率\nJPY,本行買入,0.2,0.21,0,0,0,0,0,0,0,本行賣出,0.22,0.215\n"))
-    with pytest.raises(SourceError):
-        bot.usd_twd(mk("幣別\nUSD,買,32.5,32.9,0,0,0,0,0,0,0,賣,33.2,32.99\n"))
+        _bot("很抱歉，本次查詢找不到任何一筆資料！", fname="XRT.csv")
+    with pytest.raises(NotYet):
+        _bot(MULTI.replace("33.05000", "0.00000"))
+
+
+def test_usd_twd_not_collected_intraday_even_when_read_through():
+    # 臺銀一天掛牌多次：當日 16:30 前，讀穿或強制重抓都不能把盤中牌價當成當日 ok
+    from pool import digest as dg
+    from pool.sources import Ctx
+    from pool.util import NotYet
+    with pytest.raises(NotYet):
+        _bot(MULTI, now=dt.datetime(2026, 11, 20, 15, 0, tzinfo=TW))
+    cat = dg.load_catalog()
+    ctx = Ctx(http=_BotHttp(MULTI), cal={"tw_last": "2026-11-20"}, now=dt.datetime(2026, 11, 20, 15, 0, tzinfo=TW))
+    ctx.http.finmind = lambda *a: [{"date": "2026-11-20", "spot_buy": 32.89, "spot_sell": 32.99}]
+    e = dg.resolve("usd_twd", cat["items"]["usd_twd"], ctx, "official_first")
+    assert e["status"] == "pending"
+    v, _ = _bot(MULTI, now=dt.datetime(2026, 11, 21, 9, 0, tzinfo=TW))   # 隔天讀前一日不受門檻影響
+    assert v["spot_buy"] == 33.05

@@ -27,6 +27,7 @@ OFFICIAL = {
 
 class FixtureHttp:
     token_state = "none"
+    last_headers = {}
 
     def __init__(self, day="2026-11-20", off=()):
         self.dir = Path(__file__).parent / "fixtures" / day
@@ -71,7 +72,9 @@ class FixtureHttp:
         if "futDataDown" in url:
             return self._load("taifex_futDataDown_TX_" + post["queryStartDate"].replace("/", "") + ".csv")
         if "rate.bot.com.tw/xrt/flcsv/0/" in url:   # 臺灣銀行牌告匯率（樣本只含 USD 一列，遠期欄以 0 表示無報價）
-            return self._load("bot_flcsv_" + url.rsplit("/", 1)[1] + ".csv")
+            day = url.rsplit("/", 1)[1]
+            self.last_headers = {"content-disposition": f"attachment; filename=ExchangeRate@{day.replace('-', '')}1600.csv"}
+            return self._load("bot_flcsv_" + day + ".csv")
         if "vix/log2data" in url:
             if url.endswith("202611new.txt"):
                 return self._load("taifex_vix_202611new.txt")

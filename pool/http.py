@@ -38,6 +38,7 @@ class Http:
     def __init__(self, token: str | None = None, timeout: int = 40, retries: int = 2):
         self.token = token if token is not None else os.environ.get("FINMIND_TOKEN") or None
         self.token_state = "none" if not self.token else "valid"
+        self.last_headers = {}   # 最近一次 bytes() 回應的標頭（小寫鍵）；臺銀 CSV 靠檔名核對資料日
         self.timeout, self.retries = timeout, retries
         self._opener = urllib.request.build_opener(_NoCrossHost)
 
@@ -55,6 +56,7 @@ class Http:
                 req = urllib.request.Request(url, data=data, headers={"User-Agent": "tw-data-pool/2"})
                 with self._opener.open(req, timeout=self.timeout) as r:
                     body = r.read(MAX_BYTES + 1)
+                    self.last_headers = {k.lower(): v for k, v in r.headers.items()}
                 if len(body) > MAX_BYTES:
                     raise SourceError("回應超過 8 MB")
                 return body
