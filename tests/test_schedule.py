@@ -123,6 +123,15 @@ def test_large_traders_falls_back_to_csv():
     assert v["specific"]["top10_buy"] == 106853 and v["market_oi"] == 141906
 
 
+def test_large_traders_csv_fallback_reports_actual_source():
+    from pool import digest as dg
+    from pool.sources import Ctx
+    ctx = Ctx(http=_Http("20261124", CSV), cal={"tw_last": "2026-11-25"}, now=dt.datetime(2026, 11, 25, 18, 0, tzinfo=TW))
+    cat = dg.load_catalog()
+    e = dg.resolve("large_traders", cat["items"]["large_traders"], ctx, cat.get("source_policy", "official_first"))
+    assert e["status"] == "ok" and "largeTraderFutDown" in e["src"] and "_src" not in e["v"]
+
+
 def test_large_traders_prefers_openapi_when_current():
     from pool.sources import taifex
     v, _ = taifex.large_traders(_ctx(_Http("20261125", "")))
@@ -174,7 +183,9 @@ def _read(tmp_path, data, now):
 
 
 def test_reader_flags_late_pool_and_derives_locally(tmp_path, monkeypatch):
-    r = _read(tmp_path, _setup(tmp_path, monkeypatch), "2026-11-25T18:23:00+08:00")
+    data = _setup(tmp_path, monkeypatch)
+    _log(data, "2026-11-25T12:40:00+08:00,schedule,2026-11-25T06:32:00+08:00,368.0")   # 盤後時段一次都沒跑
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
     assert r["health"]["alert"] is True and "taiex" in r["read"]["late"]
     assert r["health"]["notes"][0].startswith("資料池未按時更新")
     assert r["taiex_hist"][-1] == ["2026-11-25", 101, 102, 95, 96]
@@ -237,6 +248,41 @@ def test_reader_recomputes_vix_sigma_when_vix_read_through(tmp_path, monkeypatch
     assert r["items"]["vix"]["via"] == "direct" and r["derived_via"] == "pool"
     assert r["derived"]["rv20_annual_pct"] == 9.9
     assert r["derived"]["sigma1_vix_pts"] == round(96 * 50 / 100 / 252 ** 0.5, 1)
+
+
+def _pool_taiex(data):
+    d = json.loads((data / "latest" / "digest.json").read_text("utf-8"))
+    d["items"] = {"taiex": {"status": "ok", "asof": "2026-11-25", "src": "TWSE:x",
+                            "v": {"open": 1, "high": 1, "low": 1, "close": 96, "chg": 0, "chg_pct": 0, "turnover_bn": 1}}}
+    d["generated_at"] = "2026-11-25T14:20:00+08:00"
+    (data / "latest" / "digest.json").write_text(json.dumps(d), "utf-8")
+
+
+def test_reader_flags_slots_missed_even_if_filled_late(tmp_path, monkeypatch):
+    # 盤後時鐘全漏跑，18:20 晚到的備援補齊加權：資料雖來自資料池，排程仍失靈，要發警示並註明已補齊
+    data = _setup(tmp_path, monkeypatch)
+    _pool_taiex(data)
+    _log(data, "2026-11-25T18:20:00+08:00,schedule,2026-11-25T06:32:00+08:00,708.0")
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
+    assert r["items"]["taiex"]["via"] == "pool" and r["read"]["late_filled"] == ["taiex"]
+    assert r["health"]["alert"] is True and any(n.startswith("資料池排程失靈但已補齊") for n in r["health"]["notes"])
+
+
+def test_reader_manual_only_log_is_not_on_time_evidence(tmp_path, monkeypatch):
+    # 日誌只有 14:20 手動補抓（digest 也在 14:20 寫入）：不能拿 generated_at 當成加權準時抓過
+    data = _setup(tmp_path, monkeypatch)
+    _pool_taiex(data)
+    (data / "latest" / "digest.json").write_text(
+        (data / "latest" / "digest.json").read_text("utf-8").replace('"items": {"taiex"', '"items": {"x"'), "utf-8")
+    _log(data, "2026-11-25T14:20:00+08:00,workflow_dispatch,,")
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
+    assert "taiex" in r["read"]["late"]
+
+
+def test_reader_skips_schedule_check_without_log(tmp_path, monkeypatch):
+    r = _read(tmp_path, _setup(tmp_path, monkeypatch), "2026-11-25T18:23:00+08:00")
+    assert r["read"]["late"] == [] and r["read"]["late_filled"] == []
+    assert any("讀不到資料池執行紀錄" in n for n in r["read"]["notes"])
 
 
 def test_reader_flags_recent_late_clock_run_only(tmp_path, monkeypatch):

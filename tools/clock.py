@@ -142,7 +142,8 @@ def main(argv=None) -> int:
     for t, c in back:
         if not dispatch("pool.yml", _slot(t, c), a.dry_run):
             failed += 1
-            print(f"::error::回補時段 {t.astimezone(TW):%F %H:%M} 送出失敗，需人工 dispatch pool.yml（slot={c}）", flush=True)
+            print(f"::error::回補時段 {t.astimezone(TW):%F %H:%M} 送出失敗，請在 6 小時內人工補送："
+                  f"gh workflow run pool.yml -f slot='{c}' -f slot_at={_slot(t, c)['slot_at']}", flush=True)
     if not back and not dispatch("pool.yml", {"slot": "catch-up"}, a.dry_run):
         failed += 1
     for t, c in plan:
@@ -151,7 +152,8 @@ def main(argv=None) -> int:
             time.sleep(wait)
         if not dispatch("pool.yml", _slot(t, c), a.dry_run):
             failed += 1
-            print(f"::error::時段 {t.astimezone(TW):%F %H:%M} 送出失敗，需人工 dispatch pool.yml（slot={c}）", flush=True)
+            print(f"::error::時段 {t.astimezone(TW):%F %H:%M} 送出失敗，請在 6 小時內人工補送："
+                  f"gh workflow run pool.yml -f slot='{c}' -f slot_at={_slot(t, c)['slot_at']}", flush=True)
     if not a.dry_run:
         rest = (stop - now()).total_seconds()
         if rest > 0:

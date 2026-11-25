@@ -53,14 +53,19 @@ def read_data_file(rel: str, data_dir: str | None):
         return _sh(["git", "show", f"FETCH_HEAD:{rel}"], cwd=ROOT)
 
 
-def _run_log(data_dir: str | None, digest: dict | None, now: dt.datetime):
+def _run_log(data_dir: str | None, now: dt.datetime):
     """讀 logs/run_log.csv，回傳 (排程與時鐘執行時間清單, 近 CLOCK_WINDOW_H 小時內的時鐘延遲事件)。
     只認 trigger 為 clock 或 schedule、且 run_at 不晚於 now 的列：手動補抓（可能只補單一項目，或用 --date
-    以模擬時間重算）不代表各項目都有按時抓過。run_log 讀不到時才退回用 digest 的 generated_at。"""
+    以模擬時間重算）不代表各項目都有按時抓過。讀不到日誌時回傳 (None, [])，由呼叫端略過排程檢查，
+    不拿 digest 的 generated_at 充當執行證據（它可能來自手動補抓）。"""
     runs, late = [], []
     try:
         import csv, io
-        for r in csv.DictReader(io.StringIO(read_data_file("logs/run_log.csv", data_dir).decode("utf-8"))):
+        rows = list(csv.DictReader(io.StringIO(read_data_file("logs/run_log.csv", data_dir).decode("utf-8"))))
+    except Exception:  # noqa: BLE001
+        return None, late
+    for r in rows:
+        try:
             if r.get("trigger") not in ("clock", "schedule") or not r.get("run_at"):
                 continue
             t = dt.datetime.fromisoformat(r["run_at"])
@@ -72,15 +77,9 @@ def _run_log(data_dir: str | None, digest: dict | None, now: dt.datetime):
                 if (sf.tzinfo and now - dt.timedelta(hours=CLOCK_WINDOW_H) < sf <= now
                         and float(r["delay_min"]) > CLOCK_LATE_MIN):
                     late.append(f"時鐘觸發延遲 {r['delay_min']} 分（應於 {r['scheduled_for'][5:16].replace('T', ' ')} 執行）")
-        if runs:
-            return runs, late
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        g = dt.datetime.fromisoformat((digest or {}).get("generated_at") or "")
-        return ([g] if g.tzinfo and g <= now else []), late
-    except ValueError:
-        return [], late
+        except ValueError:
+            continue
+    return runs, late
 
 
 _ZH = [
@@ -228,13 +227,16 @@ def main(argv=None, http=None) -> int:
         if e.get("src"):
             e["src_zh"] = src_zh(e["src"])
 
-    # 資料池沒按時更新：關鍵項目已過預計公布時間 LATE_MIN 分鐘還要靠讀穿或仍缺，且在 [預計公布, 預計公布＋LATE_MIN]
-    # 之間沒有任何排程或時鐘執行，才判定排程失靈。期限後才到的備援執行不算準時；資料池有準時跑、只是交易所晚公布的
-    # 情形不算（那由 pool.run 逾 4 小時轉 missing 警示）。
-    runs, clock_late = _run_log(a.data_dir, digest, now)
+    # 資料池沒按時更新：關鍵項目已過「預計公布＋LATE_MIN」，而在 [預計公布, 預計公布＋LATE_MIN] 之間沒有任何排程或
+    # 時鐘執行，就是排程失靈。期限後才到的備援不算準時；資料池有準時跑、只是交易所晚公布的情形不算（那由 pool.run
+    # 逾 4 小時轉 missing 警示）。檢查對象：仍要讀穿或仍缺的關鍵項目（late），以及雖已由資料池提供、但預計公布在
+    # 最近 CLOCK_WINDOW_H 小時內的關鍵項目（late_filled：逾時後才補齊，排程仍失靈；更早的不再重複發簡訊）。
+    runs, clock_late = _run_log(a.data_dir, now)
     last_run = max(runs) if runs else None
-    late = []
-    for name in via_direct + missing:
+    late, late_filled = [], []
+    if runs is None:
+        notes.append("讀不到資料池執行紀錄（logs/run_log.csv），未檢查排程是否準時")
+    for name in ([] if runs is None else prof["need"]):
         cfg = cat["items"][name]
         if not cfg.get("key"):
             continue
@@ -243,8 +245,12 @@ def main(argv=None, http=None) -> int:
         except Exception:  # noqa: BLE001
             continue
         limit = due + dt.timedelta(minutes=LATE_MIN)
-        if now > limit and not any(due <= t <= limit for t in runs):
+        if now <= limit or any(due <= t <= limit for t in runs):
+            continue
+        if name in via_direct or name in missing:
             late.append(name)
+        elif now - due <= dt.timedelta(hours=CLOCK_WINDOW_H):
+            late_filled.append(name)
 
     hist, series = [], []
     try:
@@ -290,6 +296,10 @@ def main(argv=None, http=None) -> int:
     if clock_late:
         health["alert"] = True
         health["notes"] = [n for n in clock_late if n not in (health.get("notes") or [])] + list(health.get("notes") or [])
+    if late_filled:
+        health["alert"] = True
+        health["notes"] = [f"資料池排程失靈但已補齊（{'、'.join(late_filled)} 在預計公布後 {LATE_MIN} 分鐘內沒有執行紀錄，"
+                           f"逾時後才由資料池補上）"] + list(health.get("notes") or [])
     if late:
         health["alert"] = True
         health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺，"
@@ -305,7 +315,8 @@ def main(argv=None, http=None) -> int:
         "taiex_hist": hist,
         "taiex_hist_cols": ["date", "open", "high", "low", "close"],
         "health": health,
-        "read": {"exit": ex, "via_direct": via_direct, "missing": missing, "late": late, "notes": notes},
+        "read": {"exit": ex, "via_direct": via_direct, "missing": missing, "late": late, "late_filled": late_filled,
+                 "notes": notes},
     }
     Path(a.out).write_text(json.dumps(result, ensure_ascii=False, indent=1) + "\n", "utf-8")
 

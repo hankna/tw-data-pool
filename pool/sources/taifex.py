@@ -97,17 +97,19 @@ def _large_csv(ctx, D):
 
 def large_traders(ctx):
     D = ctx.d("tw_last")
+    src = None
     try:
         pick = _large_open(ctx, D)
     except NotYet:
         pick = _large_csv(ctx, D)
         if not pick:
             raise NotYet(f"期交所大額交易人尚未公布 {iso(D)}（OpenAPI 與 CSV 皆無）")
+        src = "TAIFEX:largeTraderFutDown（CSV 備援，OpenAPI 尚未更新到目標日）"
     if set(pick) != {"0", "1"}:
         raise SourceError("大額交易人缺 TX 全部月份")
     f = lambda r: {"top5_buy": _i(r[0]), "top5_sell": _i(r[1]), "top10_buy": _i(r[2]), "top10_sell": _i(r[3])}  # noqa: E731
-    return {"scope": "TX+MTX/4 全部月份", "all": f(pick["0"]), "specific": f(pick["1"]),
-            "market_oi": _i(pick["0"][4])}, D
+    v = {"scope": "TX+MTX/4 全部月份", "all": f(pick["0"]), "specific": f(pick["1"]), "market_oi": _i(pick["0"][4])}
+    return ({**v, "_src": src} if src else v), D
 
 
 # ---- CSV 下載 ----

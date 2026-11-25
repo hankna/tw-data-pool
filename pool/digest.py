@@ -86,6 +86,9 @@ def resolve(name: str, cfg: dict, ctx: Ctx, policy: str) -> dict:
         fn = REG[name][vendor]
         try:
             v, asof = fn(ctx)
+            if isinstance(v, dict) and "_src" in v:   # 來源函式改走備援網址時，回報實際來源
+                v = dict(v)
+                label = v.pop("_src")
             validate.check(name, v, cfg)
             results.append({"vendor": vendor, "label": label, "v": v, "asof": iso(asof)})
             if len(results) == 1:
