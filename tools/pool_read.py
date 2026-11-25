@@ -89,6 +89,7 @@ _ZH = [
     ("TWSE:marginTrading/MI_MARGN", lambda s: "證交所 信用交易統計（MI_MARGN）"),
     ("TWSE:", lambda s: "證交所"),
     ("TPEx:", lambda s: "櫃買中心 OpenAPI 指數"),
+    ("BOT:", lambda s: "臺灣銀行 牌告匯率"),
     ("TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFutures", lambda s: "期交所 OpenAPI 三大法人期貨"),
     ("TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfCalls", lambda s: "期交所 OpenAPI 三大法人選擇權"),
     ("TAIFEX:openapi/PutCallRatio", lambda s: "期交所 OpenAPI 賣權買權比"),

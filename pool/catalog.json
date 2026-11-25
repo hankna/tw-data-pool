@@ -225,6 +225,7 @@
    "group": "tw_close",
    "due": "16:30",
    "sources": [
+    "BOT:xrt/flcsv/0",
     "FinMind:TaiwanExchangeRate?data_id=USD"
    ],
    "fields": {
