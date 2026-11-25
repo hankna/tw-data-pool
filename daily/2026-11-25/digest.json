@@ -1,0 +1,374 @@
+{
+ "schema": "tw-data-pool/2",
+ "generated_at": "2026-11-25T21:35:10+08:00",
+ "snapshot_id": "27e90a81",
+ "calendar": {
+  "tw_last": "2026-11-25",
+  "tw_prev": "2026-11-24",
+  "tw_next": "2026-11-26",
+  "us_last": "2026-11-24"
+ },
+ "items": {
+  "taiex": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:TaiwanStockPrice",
+   "v": {
+    "open": 39983.91,
+    "high": 39983.91,
+    "low": 36681.9,
+    "close": 38195.43,
+    "chg": -1926.92,
+    "chg_pct": -4.8,
+    "turnover_bn": 12297.62
+   },
+   "xcheck": "match"
+  },
+  "tpex": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:TaiwanStockPrice",
+   "v": {
+    "close": 275.97,
+    "chg_pct": -5.89
+   }
+  },
+  "inst_spot": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "TWSE:BFI82U",
+   "v": {
+    "foreign_bn": -1236.55,
+    "trust_bn": 550.35,
+    "dealer_bn": -128.33,
+    "dealer_self_bn": -73.63,
+    "dealer_hedge_bn": -54.7,
+    "total_bn": -814.53
+   },
+   "xcheck": "match"
+  },
+  "fut_inst": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:TaiwanFuturesInstitutionalInvestors",
+   "v": {
+    "foreign": {
+     "net_oi": -105709,
+     "chg": -2527
+    },
+    "trust": {
+     "net_oi": 100918,
+     "chg": 2904
+    },
+    "dealer": {
+     "net_oi": -651,
+     "chg": -418
+    }
+   },
+   "xcheck": "n/a"
+  },
+  "opt_inst": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:TaiwanOptionInstitutionalInvestors",
+   "v": {
+    "foreign": {
+     "call_net_oi": 13059,
+     "call_net_oi_amt_k": 1405111,
+     "put_net_oi": 2725,
+     "put_net_oi_amt_k": 305772
+    }
+   }
+  },
+  "tx_day": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "TAIFEX:futDataDown",
+   "v": {
+    "contract": "202612",
+    "open": 38450.0,
+    "high": 38890.0,
+    "low": 36500.0,
+    "close": 38062.0,
+    "settle": 38123.0,
+    "chg": -2262.0,
+    "volume": 125455,
+    "oi": 131341,
+    "basis": -133.43
+   }
+  },
+  "txo_oi": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:TaiwanOptionDaily",
+   "v": {
+    "expiring_today": [
+     "202611W4"
+    ],
+    "monthly": "202612",
+    "weekly": "202611F4",
+    "top": {
+     "202612": {
+      "call": [
+       [
+        50000,
+        2309
+       ],
+       [
+        57400,
+        1741
+       ],
+       [
+        49000,
+        1693
+       ]
+      ],
+      "put": [
+       [
+        49800,
+        3399
+       ],
+       [
+        25200,
+        1851
+       ],
+       [
+        28000,
+        1148
+       ]
+      ]
+     },
+     "202611F4": {
+      "call": [
+       [
+        43000,
+        5874
+       ],
+       [
+        37600,
+        3502
+       ],
+       [
+        37800,
+        3412
+       ]
+      ],
+      "put": [
+       [
+        32400,
+        1694
+       ],
+       [
+        34500,
+        367
+       ],
+       [
+        32500,
+        364
+       ]
+      ]
+     }
+    },
+    "oi_sum_excl_expiring": {
+     "call": 90639,
+     "put": 36114
+    }
+   },
+   "xcheck": "n/a"
+  },
+  "pc_ratio": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "derived:txo_oi（排除當日到期）",
+   "v": {
+    "oi_pct": 39.84,
+    "vol_pct": null,
+    "put_oi": 36114,
+    "call_oi": 90639
+   }
+  },
+  "large_traders": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "TAIFEX:largeTraderFutDown（CSV 備援，OpenAPI 尚未更新到目標日）",
+   "v": {
+    "scope": "TX+MTX/4 全部月份",
+    "all": {
+     "top5_buy": 97592,
+     "top5_sell": 70972,
+     "top10_buy": 108908,
+     "top10_sell": 98606
+    },
+    "specific": {
+     "top5_buy": 97592,
+     "top5_sell": 70972,
+     "top10_buy": 106853,
+     "top10_sell": 98606
+    },
+    "market_oi": 141906
+   }
+  },
+  "vix": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt",
+   "v": {
+    "close": 58.38,
+    "close_1min_avg": 58.28,
+    "chg": 32.2
+   }
+  },
+  "margin": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "TWSE:MI_MARGN",
+   "v": {
+    "balance_bn": 4341.38,
+    "chg_bn": -193.67,
+    "short_balance": 169365,
+    "short_chg": -17248
+   },
+   "xcheck": "match"
+  },
+  "usd_twd": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:TaiwanExchangeRate",
+   "v": {
+    "spot_buy": 33.075,
+    "spot_sell": 33.175,
+    "mid": 33.13
+   },
+   "label": "臺灣銀行牌告即期匯率"
+  },
+  "tx_night": {
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "TAIFEX:futDataDown",
+   "v": {
+    "trading_date": "2026-11-25",
+    "session": "11/24 15:00～11/25 05:00",
+    "contract": "202612",
+    "open": 40772.0,
+    "high": 40900.0,
+    "low": 37730.0,
+    "close": 38482.0,
+    "chg": -1842.0,
+    "chg_pct": -4.57,
+    "volume": 95642
+   }
+  },
+  "us_index": {
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "^GSPC": {
+     "close": 7201.09,
+     "chg_pct": -0.5
+    },
+    "^IXIC": {
+     "close": 23733.54,
+     "chg_pct": -1.48
+    },
+    "^DJI": {
+     "close": 50018.7,
+     "chg_pct": 0.85
+    },
+    "^SOX": {
+     "close": 8832.5,
+     "chg_pct": -7.88
+    }
+   }
+  },
+  "us_stock": {
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "NVDA": {
+     "close": 155.38,
+     "chg_pct": -5.86
+    },
+    "TSM": {
+     "close": 349.2,
+     "chg_pct": -3.96
+    },
+    "AMD": {
+     "close": 413.27,
+     "chg_pct": -8.86
+    },
+    "AVGO": {
+     "close": 301.08,
+     "chg_pct": -3.98
+    },
+    "MU": {
+     "close": 629.79,
+     "chg_pct": -11.01
+    }
+   }
+  },
+  "us_vix": {
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "close": 26.36,
+    "chg": -0.26
+   }
+  },
+  "us_yield": {
+   "asof": "2026-11-23",
+   "status": "ok",
+   "src": "FinMind:GovernmentBondsYield",
+   "v": {
+    "y10": 4.92,
+    "y10_chg_bp": 0.0,
+    "y2": 4.63,
+    "y2_chg_bp": 0.0
+   }
+  }
+ },
+ "derived": {
+  "rv20_annual_pct": 62.59,
+  "sigma1_rv_pts": 1506.0,
+  "sigma1_vix_pts": 1404.7,
+  "closes_7": [
+   [
+    "2026-11-17",
+    40092.11
+   ],
+   [
+    "2026-11-18",
+    40194.91
+   ],
+   [
+    "2026-11-19",
+    38426.89
+   ],
+   [
+    "2026-11-20",
+    36033.29
+   ],
+   [
+    "2026-11-23",
+    36811.89
+   ],
+   [
+    "2026-11-24",
+    40122.35
+   ],
+   [
+    "2026-11-25",
+    38195.43
+   ]
+  ]
+ },
+ "health": {
+  "alert": false,
+  "bad": [],
+  "clock_late": false,
+  "token": "invalid",
+  "notes": []
+ }
+}
