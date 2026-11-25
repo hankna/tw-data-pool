@@ -77,15 +77,18 @@ def test_stdlib_only():
 def test_finmind_token_4xx_falls_back(monkeypatch):
     from pool import http as h
     calls = []
-    def fake_json(self, url, params=None):
-        calls.append(dict(params or {}))
-        if params and "token" in params:
+    def fake_json(self, url, params=None, headers=None):
+        assert "token" not in (params or {})
+        calls.append(dict(headers or {}))
+        if headers and "Authorization" in headers:
             raise h.HttpStatus(403)
         return {"status": 200, "data": [1]}
     monkeypatch.setattr(h.Http, "json", fake_json)
     c = h.Http(token="BAD")
     assert c.finmind("X", None, "2026-01-01", "2026-01-02") == [1] and c.token_state == "invalid"
-    assert all("token" not in x for x in calls[1:])
+    assert calls[0] == {"Authorization": "Bearer BAD"}
+    assert c.finmind("X", None, "2026-01-01", "2026-01-02") == [1]
+    assert len(calls) == 3 and all("Authorization" not in x for x in calls[1:])
 
 
 def test_recheck_failure_keeps_previous_value():

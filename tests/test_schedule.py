@@ -105,14 +105,16 @@ def _http_rejecting(resp):
     h = Http(token="SECRET-123")
     calls = []
 
-    def fake_json(url, params=None):
-        calls.append(dict(params))
-        if "token" in params:
+    def fake_json(url, params=None, headers=None):
+        calls.append({**params, **(headers or {})})
+        assert "token" not in params          # 金鑰不得出現在網址參數
+        if headers:
+            assert headers == {"Authorization": "Bearer SECRET-123"}
             return resp()
         return {"status": 200, "data": [{"x": 1}]}
     h.json = fake_json
     assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
-    assert h.token_state == "invalid" and "token" not in calls[-1]
+    assert h.token_state == "invalid" and "Authorization" not in calls[-1]
     return h
 
 
@@ -130,6 +132,132 @@ def test_finmind_token_rejection_never_records_message_text():
     h = _http_rejecting(lambda: {"status": 402, "msg": "Your token SECRET-123 is invalid, token=U0VDUkVULTEyMw=="})
     assert h.token_reason == "FinMind status 402（TaiwanExchangeRate）"
     assert "SECRET" not in h.token_reason and "U0VD" not in h.token_reason
+
+
+def test_finmind_token_sent_as_bearer_header_not_url(monkeypatch):
+    # 實際送出的請求：金鑰只在 Authorization 標頭，網址不含 token
+    import urllib.request
+    from pool.http import Http
+    seen = {}
+
+    class _Resp:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self, n): return b'{"status": 200, "data": [{"x": 1}]}'
+    h = Http(token="SECRET-123")
+    def fake_open(req, timeout=None):
+        seen["url"], seen["auth"] = req.full_url, req.get_header("Authorization")
+        return _Resp()
+    monkeypatch.setattr(h._opener, "open", fake_open)
+    assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
+    assert seen["auth"] == "Bearer SECRET-123" and "SECRET" not in seen["url"] and "token" not in seen["url"]
+    assert h.token_state == "valid"
+
+
+def _redirect(url, newurl, auth):
+    import urllib.request
+    from pool.http import _NoCrossHost
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer SECRET-123"} if auth else {})
+    return _NoCrossHost().redirect_request(req, None, 302, "Found", {}, newurl)
+
+
+@pytest.mark.parametrize("new, auth", [
+    ("http://api.finmindtrade.com/api/v4/data", True),       # 同主機降級為 HTTP
+    ("http://api.finmindtrade.com/api/v4/data", False),
+    ("https://api.finmindtrade.com:8443/api/v4/data", True),  # 帶金鑰換連接埠
+    ("https://evil.example.com/api/v4/data", False),          # 跨主機
+])
+def test_redirect_never_carries_bearer_off_origin(new, auth):
+    from pool.util import SourceError
+    with pytest.raises(SourceError):
+        _redirect("https://api.finmindtrade.com/api/v4/data?dataset=X", new, auth)
+
+
+def test_redirect_same_origin_https_keeps_working():
+    r = _redirect("https://api.finmindtrade.com/api/v4/data?dataset=X", "https://api.finmindtrade.com/api/v4/data?dataset=Y", True)
+    assert r.full_url == "https://api.finmindtrade.com/api/v4/data?dataset=Y"
+    assert _redirect("http://www.taifex.com.tw/a", "https://www.taifex.com.tw/b", False) is not None
+
+
+def test_redirect_explicit_port_zero_is_not_default_port():
+    from pool.util import SourceError
+    with pytest.raises(SourceError):
+        _redirect("https://api.finmindtrade.com/api/v4/data", "https://api.finmindtrade.com:0/api/v4/data", True)
+
+
+def test_429_exhausted_keeps_status_code(monkeypatch):
+    import io
+    import urllib.error
+    from pool import http as hmod
+    h = hmod.Http(token="", retries=1)
+    calls = []
+    def deny(req, timeout=None):
+        calls.append(req.full_url)
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {}, io.BytesIO(b""))
+    monkeypatch.setattr(h._opener, "open", deny)
+    monkeypatch.setattr(hmod.time, "sleep", lambda s: None)
+    with pytest.raises(hmod.HttpStatus) as ei:
+        h.bytes("https://api.finmindtrade.com/api/v4/data")
+    assert ei.value.code == 429 and len(calls) == 2      # 先重試（retries=1），用盡後才拋出
+
+
+def _http_seq(*answers):
+    """依序回應：帶金鑰的第一次、免金鑰的第二次；HttpStatus 物件代表丟出例外。"""
+    from pool.http import Http
+    h, seq = Http(token="SECRET-123"), list(answers)
+    def fake_json(url, params=None, headers=None):
+        a = seq.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+    h.json = fake_json
+    return h
+
+
+def test_finmind_400_with_anon_failure_keeps_token_valid():
+    # 一般參數錯誤：帶不帶金鑰都 400，不能把金鑰判失效
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(400), HttpStatus(400))
+    with pytest.raises(HttpStatus):
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert h.token_state == "valid" and h.token_reason == ""
+
+
+def test_finmind_400_with_anon_success_marks_token_invalid():
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(400), {"status": 200, "data": [1]})
+    assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [1]
+    assert h.token_state == "invalid" and h.token_reason == "HTTP 400（TaiwanExchangeRate）"
+
+
+def test_finmind_401_marks_invalid_even_if_anon_fails():
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(401), HttpStatus(400))
+    with pytest.raises(HttpStatus):
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert h.token_state == "invalid"
+
+
+def test_finmind_other_4xx_reraised_without_touching_token():
+    from pool.http import HttpStatus
+    h = _http_seq(HttpStatus(404))
+    with pytest.raises(HttpStatus) as ei:
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert ei.value.code == 404 and h.token_state == "valid"
+
+
+def test_finmind_anon_error_never_includes_upstream_message():
+    from pool.http import Http
+    from pool.util import SourceError
+    h = Http(token="")                     # 明確停用金鑰，不受環境變數 FINMIND_TOKEN 影響
+    def fake_json(url, params=None, headers=None):
+        assert not headers
+        return {"status": 402, "msg": "quota for SECRET-ish value"}
+    h.json = fake_json
+    with pytest.raises(SourceError) as ei:
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert str(ei.value) == "FinMind TaiwanExchangeRate：status 402"
 
 
 # ---- 備援檢查：只有同一時段已由時鐘處理過才略過 ----
@@ -248,7 +376,7 @@ def test_finmind_error_with_token_never_includes_message():
     from pool.http import Http
     from pool.util import SourceError
     h = Http(token="SECRET-123")
-    h.json = lambda url, params=None: {"status": 400, "msg": "bad request for SECRET-123"}
+    h.json = lambda url, params=None, headers=None: {"status": 400, "msg": "bad request for SECRET-123"}
     with pytest.raises(SourceError) as ei:
         h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
     assert "SECRET" not in str(ei.value) and "status 400" in str(ei.value)
