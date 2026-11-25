@@ -376,6 +376,7 @@ def test_bot_rejects_swapped_columns_wrong_date_and_bad_numbers():
     from pool.util import SourceError
     swapped = MULTI.replace("現金,即期", "即期,現金")            # 上游調換現金與即期欄：標記仍在原位，必須擋下
     for text, kw in [(swapped, {}), (MULTI, {"fname": "ExchangeRate@202611191600.csv"}),
+                     (MULTI, {"fname": None}), (MULTI, {"fname": "rates.csv"}),   # 缺檔名或格式改變：無法確認資料日
                      (MULTI.replace("33.05000", "N/A"), {})]:
         with pytest.raises(SourceError):
             _bot(text, **kw)

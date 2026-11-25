@@ -29,13 +29,16 @@ def usd_twd(ctx):
     D = ctx.d("tw_last")
     ctx.not_before(D, READY, "臺灣銀行牌告匯率")
     raw, headers = _fetch(ctx, D)
-    m = _FNAME.search(headers.get("content-disposition", ""))
-    if m and m.group(1) != iso(D).replace("-", ""):
-        raise SourceError(f"臺灣銀行回應的資料日 {m.group(1)} 與請求日 {iso(D)} 不符")
     rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig", "replace"))))
     usd = [r for r in rows if r and r[0].strip() == "USD"]
     if not usd:
-        raise NotYet(f"臺灣銀行牌告匯率尚無 {iso(D)}")
+        raise NotYet(f"臺灣銀行牌告匯率尚無 {iso(D)}")     # 查無資料（週末、未來日期）回純文字 XRT.csv
+    # CSV 沒有日期欄：有報價就必須從檔名確認資料日，缺檔名或格式改變一律拒收、改走 FinMind
+    m = _FNAME.search(headers.get("content-disposition", ""))
+    if not m:
+        raise SourceError("臺灣銀行回應缺少可辨識的檔名，無法確認資料日")
+    if m.group(1) != iso(D).replace("-", ""):
+        raise SourceError(f"臺灣銀行回應的資料日 {m.group(1)} 與請求日 {iso(D)} 不符")
     head = [c.strip() for c in rows[0]]
     r = [c.strip() for c in usd[0]]
     if (len(head) < 14 or head[3] != "即期" or head[13] != "即期" or len(r) < 14
