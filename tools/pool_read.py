@@ -298,8 +298,8 @@ def main(argv=None, http=None) -> int:
         health["notes"] = [n for n in clock_late if n not in (health.get("notes") or [])] + list(health.get("notes") or [])
     if late_filled:
         health["alert"] = True
-        health["notes"] = [f"資料池排程失靈但已補齊（{'、'.join(late_filled)} 在預計公布後 {LATE_MIN} 分鐘內沒有執行紀錄，"
-                           f"逾時後才由資料池補上）"] + list(health.get("notes") or [])
+        health["notes"] = [f"資料池排程失靈但已補齊（{'、'.join(late_filled)} 在預計公布後 {LATE_MIN} 分鐘內沒有排程執行紀錄，"
+                           f"目前資料已齊）"] + list(health.get("notes") or [])
     if late:
         health["alert"] = True
         health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺，"
