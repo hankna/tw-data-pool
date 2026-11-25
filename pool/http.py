@@ -88,13 +88,15 @@ class Http:
             try:
                 j = self.json(FINMIND, {**p, "token": self.token})
                 bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
-                why = f"status {j.get('status')}：{str(j.get('msg', ''))[:80]}"
+                st = j.get("status")
+                # 公開資料分支只記代碼，不記 FinMind 回傳的訊息文字（可能回顯金鑰，截斷或編碼後遮蔽會失效）
+                why = f"FinMind status {st}" if isinstance(st, int) and not isinstance(st, bool) else "FinMind 拒絕金鑰"
             except HttpStatus as e:
                 bad = e.code in (400, 401, 403)
-                why = f"HTTP {e.code}（{dataset}）"
+                why = f"HTTP {int(e.code)}"
             if bad:
                 self.token_state = "invalid"   # 金鑰失效：本次改免金鑰
-                self.token_reason = why.replace(self.token, "***")
+                self.token_reason = f"{why}（{dataset}）"
                 j = self.json(FINMIND, p)
         else:
             j = self.json(FINMIND, p)

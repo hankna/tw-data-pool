@@ -94,20 +94,78 @@ def test_recheck_kept_when_late_but_same_target_day(tmp_path, monkeypatch):
     assert not any(n.startswith("修訂重抓略過") for n in out["health"]["notes"])
 
 
-def test_finmind_token_rejection_reason_recorded_without_token():
-    from pool.http import Http, HttpStatus
+def _http_rejecting(resp):
+    from pool.http import Http
     h = Http(token="SECRET-123")
     calls = []
 
     def fake_json(url, params=None):
         calls.append(dict(params))
         if "token" in params:
-            raise HttpStatus(401, "api.finmindtrade.com")
+            return resp()
         return {"status": 200, "data": [{"x": 1}]}
     h.json = fake_json
     assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
-    assert h.token_state == "invalid" and "401" in h.token_reason and "SECRET" not in h.token_reason
-    assert "token" not in calls[-1]
+    assert h.token_state == "invalid" and "token" not in calls[-1]
+    return h
+
+
+def test_finmind_token_rejection_records_http_code_only():
+    from pool.http import HttpStatus
+
+    def deny():
+        raise HttpStatus(401, "api.finmindtrade.com")
+    h = _http_rejecting(deny)
+    assert h.token_reason == "HTTP 401（TaiwanExchangeRate）"
+
+
+def test_finmind_token_rejection_never_records_message_text():
+    # FinMind 訊息若回顯金鑰（含截斷或編碼後），一個字都不能進公開資料：只記狀態碼
+    h = _http_rejecting(lambda: {"status": 402, "msg": "Your token SECRET-123 is invalid, token=U0VDUkVULTEyMw=="})
+    assert h.token_reason == "FinMind status 402（TaiwanExchangeRate）"
+    assert "SECRET" not in h.token_reason and "U0VD" not in h.token_reason
+
+
+# ---- 備援檢查：只有同一時段已由時鐘處理過才略過 ----
+gate = _load("fallback_gate", "tools/fallback_gate.py")
+
+
+def _gate(tmp_path, cron, now, *rows):
+    if rows is not None:
+        (tmp_path / "logs").mkdir(exist_ok=True)
+        (tmp_path / "logs" / "run_log.csv").write_text(
+            "run_at,trigger,scheduled_for,delay_min\n" + "".join(r + "\n" for r in rows), "utf-8")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert gate.main(["--cron", cron, "--data-dir", str(tmp_path), "--now", now]) == 0
+    return dict(ln.split("=", 1) for ln in buf.getvalue().split())
+
+
+def test_gate_skips_only_when_same_slot_done(tmp_path):
+    out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00",
+                "2026-11-26T05:12:40+08:00,clock,2026-11-26T05:12:00+08:00,0.7")
+    assert out == {"slot_at": "2026-11-26T05:12:00+08:00", "skip": "true"}
+
+
+def test_gate_runs_when_that_slot_failed_even_if_later_slot_ok(tmp_path):
+    # 05:12 送出失敗、06:02 成功：05:12 的備援到達時仍要照常執行（帶修訂重抓）
+    out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00",
+                "2026-11-26T06:02:40+08:00,clock,2026-11-26T06:02:00+08:00,0.7",
+                "2026-11-26T09:00:00+08:00,workflow_dispatch,,")
+    assert out == {"slot_at": "2026-11-26T05:12:00+08:00", "skip": "false"}
+
+
+def test_gate_runs_without_log_and_respects_weekday(tmp_path):
+    # 週一 12:00 收到 05:12 的備援：UTC 週日 21:12 不在 1-5，原時段是上週六 05:12（UTC 週五）
+    import shutil
+    shutil.rmtree(tmp_path / "logs", ignore_errors=True)
+    out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-30T12:00:00+08:00")
+    assert out == {"slot_at": "2026-11-28T05:12:00+08:00", "skip": "false"}
+
+
+def test_gate_unparseable_cron_runs_normally(tmp_path):
+    assert _gate(tmp_path, "*/5 * * * *", "2026-11-26T12:00:00+08:00") == {"skip": "false"}
 
 
 def test_new_clock_replays_slot_missed_during_handover(capsys):
