@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-25T21:35:10+08:00",
- "snapshot_id": "27e90a81",
+ "generated_at": "2026-11-25T22:09:30+08:00",
+ "snapshot_id": "68aa3a2a",
  "calendar": {
   "tw_last": "2026-11-25",
   "tw_prev": "2026-11-24",
@@ -239,7 +239,8 @@
     "spot_sell": 33.175,
     "mid": 33.13
    },
-   "label": "臺灣銀行牌告即期匯率"
+   "label": "臺灣銀行牌告即期匯率",
+   "rev": 0
   },
   "tx_night": {
    "asof": "2026-11-25",
