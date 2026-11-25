@@ -54,10 +54,9 @@ def read_data_file(rel: str, data_dir: str | None):
 
 
 def _run_log(data_dir: str | None, digest: dict | None, now: dt.datetime):
-    """讀 logs/run_log.csv，回傳 (資料池最近一次排程執行時間, 近 CLOCK_WINDOW_H 小時內的時鐘延遲事件)。
+    """讀 logs/run_log.csv，回傳 (排程與時鐘執行時間清單, 近 CLOCK_WINDOW_H 小時內的時鐘延遲事件)。
     只認 trigger 為 clock 或 schedule、且 run_at 不晚於 now 的列：手動補抓（可能只補單一項目，或用 --date
-    以模擬時間重算）不代表各項目都有按時抓過。digest 只在內容有變時才重寫，所以不單看 generated_at；
-    run_log 讀不到時才退回用它。"""
+    以模擬時間重算）不代表各項目都有按時抓過。run_log 讀不到時才退回用 digest 的 generated_at。"""
     runs, late = [], []
     try:
         import csv, io
@@ -74,14 +73,14 @@ def _run_log(data_dir: str | None, digest: dict | None, now: dt.datetime):
                         and float(r["delay_min"]) > CLOCK_LATE_MIN):
                     late.append(f"時鐘觸發延遲 {r['delay_min']} 分（應於 {r['scheduled_for'][5:16].replace('T', ' ')} 執行）")
         if runs:
-            return max(runs), late
+            return runs, late
     except Exception:  # noqa: BLE001
         pass
     try:
         g = dt.datetime.fromisoformat((digest or {}).get("generated_at") or "")
-        return (g if g.tzinfo and g <= now else None), late
+        return ([g] if g.tzinfo and g <= now else []), late
     except ValueError:
-        return None, late
+        return [], late
 
 
 _ZH = [
@@ -229,9 +228,11 @@ def main(argv=None, http=None) -> int:
         if e.get("src"):
             e["src_zh"] = src_zh(e["src"])
 
-    # 資料池沒按時更新：關鍵項目已過預計公布時間 LATE_MIN 分鐘還要靠讀穿或仍缺，且資料池在預計公布時間之後
-    # 一次都沒跑過，才判定排程失靈。資料池有準時跑、只是交易所晚公布的情形不算（那由 pool.run 逾 4 小時轉 missing 警示）。
-    last_run, clock_late = _run_log(a.data_dir, digest, now)
+    # 資料池沒按時更新：關鍵項目已過預計公布時間 LATE_MIN 分鐘還要靠讀穿或仍缺，且在 [預計公布, 預計公布＋LATE_MIN]
+    # 之間沒有任何排程或時鐘執行，才判定排程失靈。期限後才到的備援執行不算準時；資料池有準時跑、只是交易所晚公布的
+    # 情形不算（那由 pool.run 逾 4 小時轉 missing 警示）。
+    runs, clock_late = _run_log(a.data_dir, digest, now)
+    last_run = max(runs) if runs else None
     late = []
     for name in via_direct + missing:
         cfg = cat["items"][name]
@@ -241,7 +242,8 @@ def main(argv=None, http=None) -> int:
             due = cal_mod.due_at(cfg["group"], cfg["due"], cal)
         except Exception:  # noqa: BLE001
             continue
-        if now > due + dt.timedelta(minutes=LATE_MIN) and (last_run is None or last_run < due):
+        limit = due + dt.timedelta(minutes=LATE_MIN)
+        if now > limit and not any(due <= t <= limit for t in runs):
             late.append(name)
 
     hist, series = [], []
@@ -264,24 +266,34 @@ def main(argv=None, http=None) -> int:
     if derived and ((derived.get("closes_7") or [[None]])[-1][0] != tx.get("asof")):
         derived = None   # 資料池的衍生值算自別的資料日（例如當日加權仍缺），不沿用
     derived_via = "pool" if derived else None
+    vx = out_items.get("vix") or {}
+    vc_today = vx["v"]["close"] if vx.get("status") in DONE and vx.get("asof") == cal["tw_last"] else None
+    if derived and vx.get("via") == "direct" and vc_today is not None:
+        # 加權來自資料池、VIX 是讀穿的：資料池的 VIX 1σ 算在 VIX 公布前（為空或舊值），用同一支 derive() 重算這一欄
+        from pool.derive import derive
+        derived = {**derived, "sigma1_vix_pts": derive([], tx["v"]["close"], vc_today, cal["tw_last"])["sigma1_vix_pts"]}
+        notes.append("VIX 1σ 以讀穿的當日台指 VIX 本機重算")
     if derived is None and tx.get("status") in DONE and tx.get("asof") == cal["tw_last"] and series:
         # 加權是讀穿來的：用同一支 derive() 在本機算，定義與資料池完全相同
         from pool.derive import derive
-        vx = out_items.get("vix") or {}
-        vc = vx["v"]["close"] if vx.get("status") in DONE and vx.get("asof") == cal["tw_last"] else None
         try:
-            derived = derive(series, tx["v"]["close"], vc, cal["tw_last"])
+            derived = derive(series, tx["v"]["close"], vc_today, cal["tw_last"])
             derived_via = "direct"
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
+    if "bad" in health:
+        # 資料健康（缺漏、衝突）照沿用；digest 裡的時鐘延遲可能是幾小時前的事件，改由 run_log 時間窗重新判斷
+        health["alert"] = bool(health["bad"])
+        health["notes"] = [n for n in (health.get("notes") or []) if not n.startswith("時鐘觸發延遲")]
+        health["clock_late"] = bool(clock_late)
     if clock_late:
         health["alert"] = True
         health["notes"] = [n for n in clock_late if n not in (health.get("notes") or [])] + list(health.get("notes") or [])
     if late:
         health["alert"] = True
         health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺，"
-                           f"資料池在預計公布後沒有執行紀錄），最後執行於 "
+                           f"資料池在預計公布後 {LATE_MIN} 分鐘內沒有執行紀錄），最後執行於 "
                            f"{last_run.isoformat(timespec='minutes') if last_run else '無紀錄'}"] + list(health.get("notes") or [])
     result = {
         "snapshot_id": (digest or {}).get("snapshot_id"), "generated_at": (digest or {}).get("generated_at"),

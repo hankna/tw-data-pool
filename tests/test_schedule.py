@@ -70,6 +70,18 @@ def test_dry_run_queues_successor_first(capsys):
                                      ("17 8 * * 1-5", "16:17"), ("32 9 * * 1-5", "17:32")]]
 
 
+def test_recheck_skipped_when_too_late(tmp_path, monkeypatch):
+    # 05:12 的修訂重抓若拖到下午才跑，目標日已換成當天：略過並留紀錄，不能假裝查過前一日修訂
+    import pool.run as pr
+    from pool.store import Store
+    monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {"status": "pending", "asof": None})
+    monkeypatch.setattr(pr, "load_days", lambda http, store, today, refresh=False: [dt.date(2026, 11, 24), dt.date(2026, 11, 25)])
+    out = pr.run(object(), Store(tmp_path), dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW), recheck=True, trigger="schedule",
+                 scheduled_for="2026-11-25T05:12:00+08:00")
+    assert any(n.startswith("修訂重抓逾時略過") for n in out["health"]["notes"])
+    assert isinstance(out["health"]["bad"], list) and out["health"]["clock_late"] is False
+
+
 def test_new_clock_replays_slot_missed_during_handover(capsys):
     # 上一棒 14:11 結束、這一棒 14:14 才啟動：14:12 要用原時段補送，不是只送 catch-up
     assert clock.main(["--dry-run", "--now", "2026-11-25T06:14:00+00:00", "--budget-min", "30"]) == 0
@@ -171,9 +183,9 @@ def test_reader_flags_late_pool_and_derives_locally(tmp_path, monkeypatch):
 
 
 def test_reader_no_alert_when_pool_ran_but_exchange_late(tmp_path, monkeypatch):
-    # 資料池 17:32 準時跑過（加權當時尚未公布、digest 沒變所以沒重寫），18:23 讀穿成功：屬交易所晚公布，不算排程失靈
+    # 盤後四個時段都準時跑過（加權一直未公布、digest 沒變所以沒重寫），18:23 讀穿成功：屬交易所晚公布，不算排程失靈
     data = _setup(tmp_path, monkeypatch)
-    _log(data, "2026-11-25T17:33:10+08:00,clock,2026-11-25T17:32:00+08:00,1.2")
+    _log(data, *[f"2026-11-25T{t}:40+08:00,clock,2026-11-25T{t}:00+08:00,0.7" for t in ("14:12", "15:22", "16:17", "17:32")])
     r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
     assert r["read"]["late"] == [] and r["health"]["alert"] is False
     assert r["derived_via"] == "direct"
@@ -190,6 +202,41 @@ def test_reader_manual_run_does_not_mask_missed_slots(tmp_path, monkeypatch):
     _log(data, "2026-11-25T12:40:00+08:00,schedule,,", "2026-11-25T18:20:00+08:00,workflow_dispatch,,")
     r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
     assert "taiex" in r["read"]["late"] and r["health"]["alert"] is True
+
+
+def test_reader_late_fallback_does_not_mask_missed_slots(tmp_path, monkeypatch):
+    # 盤後時鐘全漏跑，06:32 的備援 cron 拖到 18:20 才執行：已過期限，不算準時抓過
+    data = _setup(tmp_path, monkeypatch)
+    _log(data, "2026-11-25T18:20:00+08:00,schedule,2026-11-25T06:32:00+08:00,708.0")
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
+    assert "taiex" in r["read"]["late"] and r["health"]["alert"] is True
+
+
+def test_reader_drops_stale_clock_alert_from_digest(tmp_path, monkeypatch):
+    # digest 最後一次寫入只帶 05:12 的時鐘延遲警示；晚間報告超出 6 小時窗，不應再發簡訊
+    data = _setup(tmp_path, monkeypatch)
+    d = json.loads((data / "latest" / "digest.json").read_text("utf-8"))
+    d["health"] = {"alert": True, "bad": [], "clock_late": True, "token": "none",
+                   "notes": ["時鐘觸發延遲 68.0 分（應於 05:12 執行）"]}
+    (data / "latest" / "digest.json").write_text(json.dumps(d), "utf-8")
+    _log(data, "2026-11-25T06:20:00+08:00,clock,2026-11-25T05:12:00+08:00,68.0",
+         *[f"2026-11-25T{t}:40+08:00,clock,2026-11-25T{t}:00+08:00,0.7" for t in ("14:12", "15:22", "16:17", "17:32")])
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
+    assert r["health"]["alert"] is False and r["health"]["notes"] == []
+
+
+def test_reader_recomputes_vix_sigma_when_vix_read_through(tmp_path, monkeypatch):
+    # 加權來自資料池、VIX 讀穿：資料池的 VIX 1σ 算在 VIX 公布前（null），報告要用當日 VIX 重算
+    data = _setup(tmp_path, monkeypatch)
+    d = json.loads((data / "latest" / "digest.json").read_text("utf-8"))
+    d["items"] = {"taiex": {"status": "ok", "asof": "2026-11-25", "src": "TWSE:x",
+                            "v": {"open": 1, "high": 1, "low": 1, "close": 96, "chg": 0, "chg_pct": 0, "turnover_bn": 1}}}
+    d["derived"] = {"rv20_annual_pct": 9.9, "sigma1_rv_pts": 1, "sigma1_vix_pts": None, "closes_7": [["2026-11-25", 96.0]]}
+    (data / "latest" / "digest.json").write_text(json.dumps(d), "utf-8")
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
+    assert r["items"]["vix"]["via"] == "direct" and r["derived_via"] == "pool"
+    assert r["derived"]["rv20_annual_pct"] == 9.9
+    assert r["derived"]["sigma1_vix_pts"] == round(96 * 50 / 100 / 252 ** 0.5, 1)
 
 
 def test_reader_flags_recent_late_clock_run_only(tmp_path, monkeypatch):

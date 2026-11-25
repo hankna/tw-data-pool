@@ -138,17 +138,20 @@ def main(argv=None) -> int:
     # 先排好下一棒：本棒不論怎麼結束，下一棒都會在 concurrency 佇列裡接上
     queued = dispatch("clock.yml", {}, a.dry_run)
     # 啟動補跑：空窗內的時段帶原時段補送（含 05:12 的修訂重抓）；沒有就送一次一般補跑。對帳式抓取，重複無害
-    for t, c in back:
-        dispatch("pool.yml", _slot(t, c), a.dry_run)
-    if not back:
-        dispatch("pool.yml", {"slot": "catch-up"}, a.dry_run)
     failed = 0
+    for t, c in back:
+        if not dispatch("pool.yml", _slot(t, c), a.dry_run):
+            failed += 1
+            print(f"::error::回補時段 {t.astimezone(TW):%F %H:%M} 送出失敗，需人工 dispatch pool.yml（slot={c}）", flush=True)
+    if not back and not dispatch("pool.yml", {"slot": "catch-up"}, a.dry_run):
+        failed += 1
     for t, c in plan:
         wait = (t - now()).total_seconds()
         if wait > 0 and not a.dry_run:
             time.sleep(wait)
         if not dispatch("pool.yml", _slot(t, c), a.dry_run):
             failed += 1
+            print(f"::error::時段 {t.astimezone(TW):%F %H:%M} 送出失敗，需人工 dispatch pool.yml（slot={c}）", flush=True)
     if not a.dry_run:
         rest = (stop - now()).total_seconds()
         if rest > 0:
