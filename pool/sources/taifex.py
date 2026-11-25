@@ -77,16 +77,39 @@ def pc_ratio(ctx):
             "put_oi": _i(r["PutOI"]), "call_oi": _i(r["CallOI"])}, D
 
 
-def large_traders(ctx):
-    D = ctx.d("tw_last")
+def _large_open(ctx, D):
     rows = ctx.cached(("tfx", "ltf"), lambda: ctx.http.json(OPEN + "OpenInterestOfLargeTradersFutures"))
     _check_date(rows, D, "大額交易人")
-    pick = {r["TypeOfTraders"]: r for r in rows if r["Contract"] == "TX" and r["SettlementMonth"] == "999912"}
+    return {r["TypeOfTraders"]: [r["Top5Buy"], r["Top5Sell"], r["Top10Buy"], r["Top10Sell"], r["OIOfMarket"]]
+            for r in rows if r["Contract"] == "TX" and r["SettlementMonth"] == "999912"}
+
+
+def _large_csv(ctx, D):
+    """largeTraderFutDown：當晚就有目標日（OpenAPI 常晚一天）。欄位：日期、商品、名稱、到期月份、類別、前五買、前五賣、前十買、前十賣、全市場。
+    全部月份在 CSV 記為 999999（OpenAPI 為 999912），2026-11-24 兩者數值逐欄相同。"""
+    d = iso(D).replace("-", "/")
+    raw = ctx.cached(("csv", "ltf", iso(D)), lambda: ctx.http.bytes(
+        "https://www.taifex.com.tw/cht/3/largeTraderFutDown", post={"queryStartDate": d, "queryEndDate": d}))
+    rows = list(csv.reader(io.StringIO(raw.decode("big5", "ignore"))))
+    return {r[4].strip(): [c.strip() for c in r[5:10]] for r in rows
+            if len(r) >= 10 and r[0].strip() == d and r[1].strip() == "TX" and r[3].strip() == "999999"}
+
+
+def large_traders(ctx):
+    D = ctx.d("tw_last")
+    src = None
+    try:
+        pick = _large_open(ctx, D)
+    except NotYet:
+        pick = _large_csv(ctx, D)
+        if not pick:
+            raise NotYet(f"期交所大額交易人尚未公布 {iso(D)}（OpenAPI 與 CSV 皆無）")
+        src = "TAIFEX:largeTraderFutDown（CSV 備援，OpenAPI 尚未更新到目標日）"
     if set(pick) != {"0", "1"}:
         raise SourceError("大額交易人缺 TX 全部月份")
-    f = lambda r: {"top5_buy": _i(r["Top5Buy"]), "top5_sell": _i(r["Top5Sell"]), "top10_buy": _i(r["Top10Buy"]), "top10_sell": _i(r["Top10Sell"])}
-    return {"scope": "TX+MTX/4 全部月份", "all": f(pick["0"]), "specific": f(pick["1"]),
-            "market_oi": _i(pick["0"]["OIOfMarket"])}, D
+    f = lambda r: {"top5_buy": _i(r[0]), "top5_sell": _i(r[1]), "top10_buy": _i(r[2]), "top10_sell": _i(r[3])}  # noqa: E731
+    v = {"scope": "TX+MTX/4 全部月份", "all": f(pick["0"]), "specific": f(pick["1"]), "market_oi": _i(pick["0"][4])}
+    return ({**v, "_src": src} if src else v), D
 
 
 # ---- CSV 下載 ----

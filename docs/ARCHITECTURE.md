@@ -128,6 +128,19 @@ logs/health.json                        每週產生：各項目公布時間分�
 - 交易日判斷用 `series/tw_calendar.csv`（來源 FinMind TaiwanStockTradingDate，每週更新）。非交易日執行時只寫一列紀錄。
 - 手動補抓：dispatch `pool.yml`，可帶 `date`、`items`、`force`。
 
+### 5.1 時鐘（2026-11-25 起）
+
+上線後實測 GitHub 的 schedule 在本 repo 延遲 6～12 小時（`logs/run_log.csv` 11/23～11/25 共 18 次，delay_min 387～727），盤後四個時段都拖到隔天凌晨才跑，11/25 盤後總覽 11 個項目全靠讀穿。上表時點因此改由 `clock.yml` 觸發：
+
+- `tools/clock.py` 讀 `pool.yml` 的 cron（時刻表仍只有這一份；非雙引號寫法或欄位不合法會直接報錯），睡到各時段時送出 `workflow_dispatch`（`slot`＝該 cron 字串、`slot_at`＝該時段的精確時間，延遲以它計算）。dispatch 不經排程佇列，一兩分鐘內就開跑。
+- 每個時鐘 job 約 5 小時 45 分。一啟動就先 dispatch 下一棒，讓它在 `concurrency: clock` 排隊，本棒不論正常結束、逾時或被取消都有人接；結束時若佇列裡沒有下一棒，再補送一次。同一組同時最多一個在跑、一個排隊，不會分叉。
+- 新一棒啟動時，前 20 分鐘內的時段用原時段補送（涵蓋交棒空窗，含 05:12 的修訂重抓）；沒有的話送一次 `slot=catch-up`。重複送出無害（對帳式抓取）。
+- `pool.yml` 與 `maintain.yml` 共用 `concurrency: data-branch`，設 `queue: max`（2026-05 起 GitHub 支援）：排隊的執行依序處理，延遲到達的備援 cron 不會取消時鐘送出、正在排隊的時段。
+- `clock.yml` 每 3 小時的 cron、`pool.yml` 原有的 cron 都只當斷鏈備援；就算延遲，一啟動也會補跑再接回時刻表。
+- 公開 repo 的託管 runner 不計費，時鐘整天占一個 runner 沒有費用。
+- 監控兩層：`pool.run` 在時鐘觸發卻晚到 30 分鐘以上時設 `health.alert`；報告端 `pool_read.py` 發現關鍵項目過預計公布時間 60 分鐘仍要讀穿或仍缺，且在「預計公布～預計公布後 60 分鐘」之間沒有任何排程或時鐘執行紀錄（看 `logs/run_log.csv`；手動補抓與期限後才到的備援都不算），也設 `health.alert`；資料雖已由資料池提供、但預計公布在最近 6 小時內且同樣沒有準時執行的關鍵項目，以「排程失靈但已補齊」警示。資料池有準時跑、只是交易所晚公布的情形不算排程失靈；讀不到 run_log 時略過此檢查並在 notes 註明（不拿 digest 的產生時間充當執行證據）。時鐘延遲改由報告端掃 `run_log.csv` 最近 6 小時的事件判斷（digest 另存 `health.bad`、`health.clock_late`，報告只沿用資料健康狀態，不會沿用幾小時前的延遲警示）。05:12 的修訂重抓若晚於原時段 6 小時才執行就略過並在 notes 註明，避免重抓到錯誤資料日。報告依規定發簡訊，排程失靈當天就會知道。
+- 讀穿取得當日加權時，`pool_read.py` 會用讀穿值覆蓋序列裡同日的 K 棒（避免修訂前舊值與新收盤混用）、補進 `taiex_hist`，並用同一支 `derive()` 在本機算衍生值（`derived_via: direct`）。資料池的衍生值只在其 `closes_7` 最後一日與加權資料日相同時才沿用。加權來自資料池、VIX 是讀穿時，`sigma1_vix_pts` 用當日 VIX 重算。
+
 ## 6. 報告怎麼讀
 
 每份報告的提示詞把現有的「資料來源規則」「台股資料抓取程式」「FinMind 請求上限」等段落刪掉，換成 `docs/REPORT_SNIPPET.md` 的短段落。核心只有三步：
