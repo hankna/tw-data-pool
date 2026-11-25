@@ -70,16 +70,192 @@ def test_dry_run_queues_successor_first(capsys):
                                      ("17 8 * * 1-5", "16:17"), ("32 9 * * 1-5", "17:32")]]
 
 
-def test_recheck_skipped_when_too_late(tmp_path, monkeypatch):
-    # 05:12 的修訂重抓若拖到下午才跑，目標日已換成當天：略過並留紀錄，不能假裝查過前一日修訂
+def _recheck_run(tmp_path, monkeypatch, now, ok=False):
     import pool.run as pr
     from pool.store import Store
-    monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {"status": "pending", "asof": None})
-    monkeypatch.setattr(pr, "load_days", lambda http, store, today, refresh=False: [dt.date(2026, 11, 24), dt.date(2026, 11, 25)])
-    out = pr.run(object(), Store(tmp_path), dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW), recheck=True, trigger="schedule",
-                 scheduled_for="2026-11-25T05:12:00+08:00")
-    assert any(n.startswith("修訂重抓逾時略過") for n in out["health"]["notes"])
+    if ok:   # 每個項目都拿到目標日的有效值（只驗重抓標記，序列寫入與衍生值換成空操作）
+        monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {
+            "status": "ok", "asof": pr.dg._target(cfg["group"], ctx.cal), "src": "x", "v": {"close": 1}})
+        monkeypatch.setattr(pr, "update_series", lambda *a, **k: None)
+        monkeypatch.setattr(pr, "derive", lambda *a, **k: {})
+    else:
+        monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {"status": "pending", "asof": None})
+    days = [dt.date(2026, 10, 1) + dt.timedelta(days=i) for i in range(120)]
+    days = [d for d in days if d.weekday() < 5]
+    monkeypatch.setattr(pr, "load_days", lambda http, store, today, refresh=False: days)
+    return pr.run(object(), Store(tmp_path), now, recheck=True, trigger="schedule",
+                  scheduled_for="2026-11-25T05:12:00+08:00")
+
+
+def test_recheck_skipped_when_target_day_changed(tmp_path, monkeypatch):
+    # 05:12 的修訂重抓拖到 14:30（已過 11/25 收盤）才跑：目標日已從 11/24 換成 11/25，略過並留紀錄
+    out = _recheck_run(tmp_path, monkeypatch, dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW))
+    assert any(n.startswith("修訂重抓略過") for n in out["health"]["notes"])
     assert isinstance(out["health"]["bad"], list) and out["health"]["clock_late"] is False
+
+
+def test_recheck_kept_when_late_but_same_target_day(tmp_path, monkeypatch):
+    # 晚了 7 小時但還沒收盤，目標日仍是 11/24：照常重抓
+    out = _recheck_run(tmp_path, monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW))
+    assert not any(n.startswith("修訂重抓略過") for n in out["health"]["notes"])
+
+
+def _http_rejecting(resp):
+    from pool.http import Http
+    h = Http(token="SECRET-123")
+    calls = []
+
+    def fake_json(url, params=None):
+        calls.append(dict(params))
+        if "token" in params:
+            return resp()
+        return {"status": 200, "data": [{"x": 1}]}
+    h.json = fake_json
+    assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
+    assert h.token_state == "invalid" and "token" not in calls[-1]
+    return h
+
+
+def test_finmind_token_rejection_records_http_code_only():
+    from pool.http import HttpStatus
+
+    def deny():
+        raise HttpStatus(401, "api.finmindtrade.com")
+    h = _http_rejecting(deny)
+    assert h.token_reason == "HTTP 401（TaiwanExchangeRate）"
+
+
+def test_finmind_token_rejection_never_records_message_text():
+    # FinMind 訊息若回顯金鑰（含截斷或編碼後），一個字都不能進公開資料：只記狀態碼
+    h = _http_rejecting(lambda: {"status": 402, "msg": "Your token SECRET-123 is invalid, token=U0VDUkVULTEyMw=="})
+    assert h.token_reason == "FinMind status 402（TaiwanExchangeRate）"
+    assert "SECRET" not in h.token_reason and "U0VD" not in h.token_reason
+
+
+# ---- 備援檢查：只有同一時段已由時鐘處理過才略過 ----
+gate = _load("fallback_gate", "tools/fallback_gate.py")
+
+
+def _complete_digest(data, now, missing=()):
+    """依 pool 的日曆與目錄，寫出「此刻所有已到期項目都齊全」的 data 目錄（missing 內的項目標成 missing）。"""
+    from pool import calendar as cal_mod, digest as dg
+    from pool.util import iso
+    days = [d for d in (dt.date(2026, 10, 1) + dt.timedelta(days=i) for i in range(120)) if d.weekday() < 5]
+    (data / "series").mkdir(parents=True, exist_ok=True)
+    (data / "series" / "tw_calendar.csv").write_text("date\n" + "\n".join(iso(d) for d in days) + "\n", "utf-8")
+    cal = cal_mod.compute(dt.datetime.fromisoformat(now).astimezone(cal_mod.TZ), days)
+    items = {n: ({"status": "missing", "asof": None} if n in missing else
+                 {"status": "ok", "asof": dg._target(c["group"], cal)})
+             for n, c in dg.load_catalog()["items"].items() if not n.startswith("_")}
+    (data / "latest").mkdir(exist_ok=True)
+    (data / "latest" / "digest.json").write_text(json.dumps({"items": items}), "utf-8")
+
+
+def _gate(tmp_path, cron, now, *rows, recheck=False, missing=(), digest=True):
+    if digest:
+        _complete_digest(tmp_path, now, missing)
+    (tmp_path / "logs").mkdir(exist_ok=True)
+    (tmp_path / "logs" / "run_log.csv").write_text(
+        "run_at,trigger,scheduled_for,delay_min,note\n" + "".join(r + "\n" for r in rows), "utf-8")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert gate.main(["--cron", cron, "--data-dir", str(tmp_path), "--now", now] + (["--recheck"] if recheck else [])) == 0
+    return dict(ln.split("=", 1) for ln in buf.getvalue().split())
+
+
+def test_gate_skips_only_when_same_slot_done(tmp_path):
+    out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00",
+                "2026-11-26T05:12:40+08:00,clock,2026-11-26T05:12:00+08:00,0.7")
+    assert out == {"slot_at": "2026-11-26T05:12:00+08:00", "skip": "true"}
+
+
+def test_gate_runs_when_that_slot_failed_even_if_later_slot_ok(tmp_path):
+    # 05:12 送出失敗、06:02 成功：05:12 的備援到達時仍要照常執行（帶修訂重抓）
+    out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00",
+                "2026-11-26T06:02:40+08:00,clock,2026-11-26T06:02:00+08:00,0.7",
+                "2026-11-26T09:00:00+08:00,workflow_dispatch,,")
+    assert out == {"slot_at": "2026-11-26T05:12:00+08:00", "skip": "false"}
+
+
+def test_gate_runs_without_log_and_respects_weekday(tmp_path):
+    # 週一 12:00 收到 05:12 的備援：UTC 週日 21:12 不在 1-5，原時段是上週六 05:12（UTC 週五）
+    import shutil
+    shutil.rmtree(tmp_path / "logs", ignore_errors=True)
+    out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-30T12:00:00+08:00")
+    assert out == {"slot_at": "2026-11-28T05:12:00+08:00", "skip": "false"}
+
+
+def test_gate_runs_when_slot_done_but_due_items_still_missing(tmp_path):
+    # 21:52 時鐘跑過但 margin 因上游故障沒抓到；06:15 前到達的 21:52 備援要照常執行補齊
+    row = "2026-11-25T21:52:40+08:00,clock,2026-11-25T21:52:00+08:00,0.7,"
+    assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row)["skip"] == "true"
+    assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row, missing=("margin",))["skip"] == "false"
+    import shutil
+    shutil.rmtree(tmp_path / "latest")
+    assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row, digest=False)["skip"] == "false"
+
+
+def test_gate_runs_when_cached_calendar_is_stale(tmp_path):
+    # 日曆快取只到 11/24：目標日可能算錯（digest 看似齊全），視為無法確認、照常執行
+    row = "2026-11-25T21:52:40+08:00,clock,2026-11-25T21:52:00+08:00,0.7,"
+    _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row)
+    cal = tmp_path / "series" / "tw_calendar.csv"
+    cal.write_text("\n".join(ln for ln in cal.read_text("utf-8").splitlines() if ln < "2026-11-25") + "\n", "utf-8")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        gate.main(["--cron", "52 13 * * 1-5", "--data-dir", str(tmp_path), "--now", "2026-11-26T06:10:00+08:00"])
+    assert "skip=false" in buf.getvalue()
+
+
+def test_gate_recheck_slot_needs_successful_recheck(tmp_path):
+    slot = "2026-11-26T05:12:40+08:00,clock,2026-11-26T05:12:00+08:00,0.7,"
+    run = lambda note: _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00", slot + note, recheck=True)  # noqa: E731
+    assert run("recheck=ok;")["skip"] == "true"
+    assert run("recheck=skipped;")["skip"] == "true"
+    # 05:12 來源暫時故障、沿用原值：12:00 來源已恢復，備援要再查一次修訂
+    assert run("recheck=failed:taiex,txo_oi;taiex 重抓失敗，沿用原值")["skip"] == "false"
+    assert run("")["skip"] == "false"                       # 舊紀錄沒有標記：照常執行
+
+
+def test_gate_bad_log_encoding_runs_normally(tmp_path):
+    (tmp_path / "logs").mkdir(exist_ok=True)
+    (tmp_path / "logs" / "run_log.csv").write_bytes(b"run_at,trigger,scheduled_for\n\xff\xfe\x00bad\n")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert gate.main(["--cron", "12 6 * * 1-5", "--data-dir", str(tmp_path), "--now", "2026-11-26T18:00:00+08:00"]) == 0
+    assert dict(ln.split("=", 1) for ln in buf.getvalue().split()) == {"slot_at": "2026-11-26T14:12:00+08:00", "skip": "false"}
+
+
+def test_recheck_result_is_tagged_in_run_log(tmp_path, monkeypatch):
+    import csv as _csv
+    from pool import run as pr
+    assert pr._recheck_tag(True, False, ["taiex"]) == "recheck=failed:taiex;"
+    assert pr._recheck_tag(True, False, []) == "recheck=ok;" and pr._recheck_tag(False, False, []) == ""
+    _recheck_run(tmp_path / "a", monkeypatch, dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW))
+    _recheck_run(tmp_path / "b", monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW))
+    _recheck_run(tmp_path / "c", monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW), ok=True)
+    note = lambda d: list(_csv.DictReader(open(d / "logs" / "run_log.csv", encoding="utf-8")))[-1]["note"]  # noqa: E731
+    assert note(tmp_path / "a").startswith("recheck=skipped;")
+    # 前一交易日的關鍵項目本來就沒抓到、這次仍 pending：不能算重抓成功，備援要再補
+    assert note(tmp_path / "b").startswith("recheck=failed:taiex,")
+    assert note(tmp_path / "c").startswith("recheck=ok;")
+
+
+def test_finmind_error_with_token_never_includes_message():
+    from pool.http import Http
+    from pool.util import SourceError
+    h = Http(token="SECRET-123")
+    h.json = lambda url, params=None: {"status": 400, "msg": "bad request for SECRET-123"}
+    with pytest.raises(SourceError) as ei:
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert "SECRET" not in str(ei.value) and "status 400" in str(ei.value)
+
+
+def test_gate_unparseable_cron_runs_normally(tmp_path):
+    assert _gate(tmp_path, "*/5 * * * *", "2026-11-26T12:00:00+08:00") == {"skip": "false"}
 
 
 def test_new_clock_replays_slot_missed_during_handover(capsys):
@@ -380,6 +556,42 @@ def test_bot_rejects_swapped_columns_wrong_date_and_bad_numbers():
                      (MULTI.replace("33.05000", "N/A"), {})]:
         with pytest.raises(SourceError):
             _bot(text, **kw)
+
+
+def test_bot_accepts_url_encoded_filename():
+    v, _ = _bot(MULTI, fname="ExchangeRate%40202611201600.csv")
+    assert v["spot_buy"] == 33.05
+    v, _ = _bot(MULTI, fname="\"ExchangeRate@202611201600.csv\"")
+    assert v["spot_sell"] == 33.2
+
+
+def test_unexpected_exception_text_never_reaches_digest_or_log(capsys):
+    # 非 SourceError 的例外（例如轉型錯誤）訊息可能夾帶上游原文：只記例外類型
+    from pool import digest as dg
+    from pool.sources import Ctx
+
+    def boom(ctx):
+        raise ValueError("could not convert 'SECRET-123' to float")
+    cat = dg.load_catalog()
+    ctx = Ctx(http=None, cal={"tw_last": "2026-11-20"}, now=dt.datetime(2026, 11, 21, 9, 0, tzinfo=TW))
+    orig = dict(dg.REG["usd_twd"])
+    try:
+        dg.REG["usd_twd"] = {"BOT": boom, "FinMind": lambda c: ({"spot_buy": 32.89, "spot_sell": 32.99, "mid": 32.94}, dt.date(2026, 11, 20))}
+        e = dg.resolve("usd_twd", cat["items"]["usd_twd"], ctx, "official_first")
+        dg.REG["usd_twd"] = {"BOT": boom, "FinMind": boom}
+        e2 = dg.resolve("usd_twd", cat["items"]["usd_twd"], ctx, "official_first")
+    finally:
+        dg.REG["usd_twd"] = orig
+    err = capsys.readouterr().err
+    assert e["status"] == "ok" and "BOT：ValueError" in err and "SECRET" not in err
+    assert e2["notes"] == ["BOT：ValueError", "FinMind：ValueError"]
+
+
+def test_fallback_reason_goes_to_log_not_digest(capsys):
+    from tests.test_golden import build
+    out, _ = build(off={"rate.bot.com.tw"})
+    assert out["items"]["usd_twd"]["src"].startswith("FinMind:") and "notes" not in out["items"]["usd_twd"]
+    assert "[來源備援] usd_twd 改用 FinMind：BOT：" in capsys.readouterr().err
 
 
 def test_bot_no_data_text_and_zero_spot_are_not_yet():

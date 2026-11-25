@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import sys
 from pathlib import Path
 from . import calendar as cal_mod, txo as txo_mod, validate
 from .derive import derive
@@ -100,9 +101,15 @@ def resolve(name: str, cfg: dict, ctx: Ctx, policy: str) -> dict:
         except NotYet:
             notyet += 1
         except Exception as e:  # noqa: BLE001
-            errors.append(f"{vendor}：{type(e).__name__}：{str(e)[:80]}")
+            # 只有程式自己組的 SourceError 保留訊息（帶金鑰的 FinMind 錯誤已不含回應文字）；其他例外（轉型錯誤等）
+            # 的訊息可能夾帶上游原文，digest 與公開日誌都只記例外類型
+            errors.append(f"{vendor}：{type(e).__name__}" + (f"：{str(e)[:80]}" if isinstance(e, SourceError) else ""))
     if not results:
         return {"status": "missing" if errors else "pending", "asof": None, **({"notes": errors} if errors else {})}
+    if errors:
+        # 前面的來源失敗、由後面的來源補上：原因只印到執行日誌（不進 digest，避免每次失敗都改變快照）。
+        # 錯誤字串都由程式組成；帶金鑰的 FinMind 錯誤只含資料集與狀態碼。
+        print(f"[來源備援] {name} 改用 {results[0]['vendor']}：" + "；".join(errors), file=sys.stderr)
     prim = results[0]
     entry = {"asof": prim["asof"], "status": "ok", "src": prim["label"], "v": prim["v"]}
     if cfg.get("label"):

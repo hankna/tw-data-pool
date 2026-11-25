@@ -38,6 +38,7 @@ class Http:
     def __init__(self, token: str | None = None, timeout: int = 40, retries: int = 2):
         self.token = token if token is not None else os.environ.get("FINMIND_TOKEN") or None
         self.token_state = "none" if not self.token else "valid"
+        self.token_reason = ""
         self.last_headers = {}   # 最近一次 bytes() 回應的標頭（小寫鍵）；臺銀 CSV 靠檔名核對資料日
         self.timeout, self.retries = timeout, retries
         self._opener = urllib.request.build_opener(_NoCrossHost)
@@ -86,17 +87,29 @@ class Http:
         p = {"dataset": dataset, "start_date": start, "end_date": end}
         if data_id:
             p["data_id"] = data_id
+        with_token = False
         if self.token and self.token_state != "invalid":
             try:
+                with_token = True
                 j = self.json(FINMIND, {**p, "token": self.token})
                 bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
+                st = j.get("status")
+                # 公開資料分支只記代碼，不記 FinMind 回傳的訊息文字（可能回顯金鑰，截斷或編碼後遮蔽會失效）
+                why = f"FinMind status {st}" if isinstance(st, int) and not isinstance(st, bool) else "FinMind 拒絕金鑰"
             except HttpStatus as e:
                 bad = e.code in (400, 401, 403)
+                why = f"HTTP {int(e.code)}"
             if bad:
                 self.token_state = "invalid"   # 金鑰失效：本次改免金鑰
+                self.token_reason = f"{why}（{dataset}）"
+                with_token = False
                 j = self.json(FINMIND, p)
         else:
             j = self.json(FINMIND, p)
         if j.get("status") != 200:
-            raise SourceError(f"FinMind {dataset}：{str(j.get('msg'))[:60]}")
+            st = j.get("status")
+            code = st if isinstance(st, int) and not isinstance(st, bool) else "?"
+            if with_token:   # 帶金鑰的回應訊息可能回顯金鑰：錯誤會進公開 digest，只留資料集與狀態碼
+                raise SourceError(f"FinMind {dataset}：status {code}")
+            raise SourceError(f"FinMind {dataset}：status {code}：{str(j.get('msg'))[:60]}")
         return j.get("data") or []

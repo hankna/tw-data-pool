@@ -19,7 +19,6 @@ from .util import iso, parse_date
 DONE = ("ok", "conflict")
 TIMEOUT_H = 4   # 過預計公布時間 4 小時仍未公布，由 pending 改標 missing（會觸發警示）
 CLOCK_LATE_MIN = 30   # 時鐘觸發的執行晚於時段這麼多分鐘，health 標警示
-RECHECK_MAX_H = 6     # 05:12 修訂重抓晚於原時段這麼久就略過（此時「目標日」可能已換成當天，重抓不到前一交易日的修訂）
 
 
 def load_days(http, store: Store, today: dt.date, refresh: bool = False):
@@ -68,19 +67,21 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
         scheduled_for=None, catalog=None, date=None) -> dict:
     t0 = time.time()
     cat = catalog or dg.load_catalog()
-    skip_recheck = bool(recheck and scheduled_for
-                        and now - cal_mod.parse_now(scheduled_for) > dt.timedelta(hours=RECHECK_MAX_H))
-    if skip_recheck:
-        recheck = False
     policy = cat.get("source_policy", "official_first")
     days = load_days(http, store, now.date())
     cal = cal_mod.compute(now, days)
+    # 05:12 修訂重抓要查的是「原時段當下的目標日」。執行延遲到目標日已換（過了下一個收盤）就略過，
+    # 否則會把當天的資料當成修訂重抓，前一交易日的修訂反而沒查到。目標日沒變就照常重抓，不論晚多久。
+    skip_recheck = bool(recheck and scheduled_for
+                        and cal_mod.compute(cal_mod.parse_now(scheduled_for), days)["tw_last"] != cal["tw_last"])
+    if skip_recheck:
+        recheck = False
     old = store.read_digest() or {}
     old_items = old.get("items", {})
     ctx = Ctx(http=http, cal=cal, now=now, days=days, series=store)
-    items, notes = {}, []
+    items, notes, recheck_failed = {}, [], []
     if skip_recheck:
-        notes.append(f"修訂重抓逾時略過（應於 {scheduled_for[5:16].replace('T', ' ')} 執行），前一交易日的修訂需人工補抓")
+        notes.append(f"修訂重抓略過（應於 {scheduled_for[5:16].replace('T', ' ')} 執行，執行時目標日已換），前一交易日的修訂未檢查")
     for name, cfg in cat["items"].items():
         tgt = dg._target(cfg["group"], cal)
         prev = old_items.get(name)
@@ -101,6 +102,8 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
             if e["status"] not in DONE and done:
                 # 重抓（修訂偵測或強制）失敗時沿用原值，不讓暫時性的連線問題蓋掉已取得的資料
                 notes.append(f"{name} 重抓失敗，沿用原值")
+                if recheck and cfg.get("key") and cfg["group"] == "tw_close":
+                    recheck_failed.append(name)
                 e = prev
             elif e["status"] == "pending" and now > due + dt.timedelta(hours=TIMEOUT_H):
                 e = {**e, "status": "missing", "notes": e.get("notes", []) + [f"逾預計時間 {TIMEOUT_H} 小時仍未公布"]}
@@ -117,6 +120,14 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
             e["prev"] = {k: prev[k] for k in ("asof", "v", "src") if k in prev}
         items[name] = e
         ctx.items[name] = e
+    if recheck:
+        # 修訂重抓成功＝每個關鍵 tw_close 項目都有原目標日的有效值；本來就沒抓到、這次仍缺的也算失敗，
+        # 讓 05:12 的備援再補一次
+        for name, cfg in cat["items"].items():
+            e = items.get(name) or {}
+            if (cfg.get("key") and cfg["group"] == "tw_close" and name not in recheck_failed
+                    and (e.get("status") not in DONE or e.get("asof") != dg._target(cfg["group"], cal))):
+                recheck_failed.append(name)
     update_series(store, items, ctx.side, now.isoformat(timespec="seconds"))
     tc = items.get("taiex", {}).get("v", {}).get("close") if items.get("taiex", {}).get("status") in DONE else None
     vc = items.get("vix", {}).get("v", {}).get("close") if items.get("vix", {}).get("status") in DONE else None
@@ -131,6 +142,8 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     # 時鐘觸發卻晚到，代表 clock.yml 的鏈出了問題；GitHub 自己的 cron（備援）本來就會晚，不列入
     late = trigger == "clock" and delay != "" and delay > CLOCK_LATE_MIN
     # bad 與 clock_late 分開存：報告端可只沿用資料健康狀態，時鐘延遲改依 run_log 的時間窗判斷
+    if getattr(http, "token_state", "none") == "invalid":
+        notes.append(f"FinMind 金鑰被拒（{getattr(http, 'token_reason', '原因不明')}），本次改用免金鑰額度")
     health = {"alert": bool(bad) or late, "bad": bad, "clock_late": late, "token": getattr(http, "token_state", "none"),
               "notes": notes + [f"{n}：{items[n]['status']}" for n in bad]
               + ([f"時鐘觸發延遲 {delay} 分（應於 {scheduled_for[11:16]} 執行）"] if late else [])}
@@ -148,9 +161,18 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     store.log_run({"run_at": now.isoformat(timespec="seconds"), "trigger": trigger, "scheduled_for": scheduled_for or "",
                    "delay_min": delay, "filled": filled,
                    "pending": cnt("pending"), "missing": cnt("missing"), "conflict": cnt("conflict"),
-                   "seconds": round(time.time() - t0, 1), "note": ";".join(notes)[:120]})
+                   "seconds": round(time.time() - t0, 1), "note": _recheck_tag(recheck, skip_recheck, recheck_failed) + ";".join(notes)[:120]})
     out["_changed"] = changed
     return out
+
+
+def _recheck_tag(recheck, skipped, failed) -> str:
+    """run_log note 開頭的修訂重抓結果（備援檢查據此判斷 05:12 是否真的查完；不放進截斷範圍）。"""
+    if skipped:
+        return "recheck=skipped;"
+    if recheck:
+        return f"recheck=failed:{','.join(failed)};" if failed else "recheck=ok;"
+    return ""
 
 
 def sched_from_cron(cron: str, now: dt.datetime) -> str:

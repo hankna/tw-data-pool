@@ -35,9 +35,22 @@ jobs:
         with: { ref: main, path: code }
       - uses: actions/checkout@v4
         with: { ref: data, path: data }
+      # GitHub 的排程只是備援：同一個時段已由時鐘處理過（run_log 有 trigger=clock、scheduled_for＝該時段）就略過；
+      # 只看同一時段，別的時段成功不算；查不到或讀不到一律照常執行。同時算出原時段 slot_at 給延遲的備援使用。
+      - name: 備援檢查
+        id: gate
+        if: github.event_name == 'schedule'
+        env:
+          SCHED: ${{ github.event.schedule }}
+        run: |
+          # 05:12 時段（與下方 --recheck 同一個 cron）要確認修訂重抓確實完成
+          extra=(); [ "$SCHED" = "12 21 * * 1-5" ] && extra=(--recheck)
+          python3 code/tools/fallback_gate.py --cron "$SCHED" --data-dir data "${extra[@]}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.skip != 'true'
         with: { python-version: "3.12" }
       - name: 執行
+        if: steps.gate.outputs.skip != 'true'
         working-directory: code
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
@@ -48,6 +61,7 @@ jobs:
           IN_FORCE: ${{ github.event.inputs.force }}
           IN_SLOT: ${{ github.event.inputs.slot }}
           IN_SLOT_AT: ${{ github.event.inputs.slot_at }}
+          GATE_AT: ${{ steps.gate.outputs.slot_at }}
         run: |
           # 時鐘觸發：trigger 記為 clock，時段沿用 cron 字串計算排程延遲
           [ -n "$IN_SLOT" ] && EVENT=clock
@@ -55,12 +69,15 @@ jobs:
           args=(--data-dir ../data --trigger "$EVENT")
           [ -n "$SCHED" ] && args+=(--cron "$SCHED")
           [ -n "$IN_SLOT" ] && [ -n "$IN_SLOT_AT" ] && args+=(--scheduled-for "$IN_SLOT_AT")
+          # 延遲到達的備援：以備援檢查算出的原時段計算延遲與修訂重抓目標日（不靠執行時間回推）
+          [ -z "$IN_SLOT" ] && [ -n "$GATE_AT" ] && args+=(--scheduled-for "$GATE_AT")
           [ -n "$IN_DATE" ] && args+=(--date "$IN_DATE")
           [ -n "$IN_ITEMS" ] && args+=(--items "$IN_ITEMS")
           [ "$IN_FORCE" = "true" ] && args+=(--force)
           [ "$SCHED" = "12 21 * * 1-5" ] && args+=(--recheck)
           python -m pool.run "${args[@]}"
       - name: 推送到 data 分支
+        if: steps.gate.outputs.skip != 'true'
         working-directory: data
         run: |
           git config user.name "tw-data-pool[bot]"
