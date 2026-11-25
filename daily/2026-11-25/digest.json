@@ -1,6 +1,6 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-25T22:34:38+08:00",
+ "generated_at": "2026-11-25T22:59:44+08:00",
  "snapshot_id": "68aa3a2a",
  "calendar": {
   "tw_last": "2026-11-25",
@@ -369,9 +369,7 @@
   "alert": false,
   "bad": [],
   "clock_late": false,
-  "token": "invalid",
-  "notes": [
-   "FinMind 金鑰被拒（HTTP 400（TaiwanExchangeRate）），本次改用免金鑰額度"
-  ]
+  "token": "valid",
+  "notes": []
  }
 }
