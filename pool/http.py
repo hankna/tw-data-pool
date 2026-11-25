@@ -44,7 +44,8 @@ class Http:
         self._opener = urllib.request.build_opener(_NoCrossHost)
 
     # ---- 底層 ----
-    def bytes(self, url: str, params: dict | None = None, post: dict | None = None) -> bytes:
+    def bytes(self, url: str, params: dict | None = None, post: dict | None = None,
+              headers: dict | None = None) -> bytes:
         if params:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params)
         host = urllib.parse.urlsplit(url).hostname
@@ -54,7 +55,7 @@ class Http:
         last = None
         for i in range(self.retries + 1):
             try:
-                req = urllib.request.Request(url, data=data, headers={"User-Agent": "tw-data-pool/2"})
+                req = urllib.request.Request(url, data=data, headers={"User-Agent": "tw-data-pool/2", **(headers or {})})
                 with self._opener.open(req, timeout=self.timeout) as r:
                     body = r.read(MAX_BYTES + 1)
                     self.last_headers = {k.lower(): v for k, v in r.headers.items()}
@@ -73,8 +74,8 @@ class Http:
                 time.sleep(2 * (i + 1))
         raise SourceError(f"連線失敗：{host}：{type(last).__name__}")
 
-    def json(self, url: str, params: dict | None = None):
-        raw = self.bytes(url, params)
+    def json(self, url: str, params: dict | None = None, headers: dict | None = None):
+        raw = self.bytes(url, params, headers=headers)
         if not raw.strip():
             raise SourceError("空回應")
         try:
@@ -91,7 +92,8 @@ class Http:
         if self.token and self.token_state != "invalid":
             try:
                 with_token = True
-                j = self.json(FINMIND, {**p, "token": self.token})
+                # FinMind v4 只認 Authorization: Bearer 標頭；放網址參數會被拒（HTTP 400），也會讓金鑰出現在網址
+                j = self.json(FINMIND, p, headers={"Authorization": f"Bearer {self.token}"})
                 bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
                 st = j.get("status")
                 # 公開資料分支只記代碼，不記 FinMind 回傳的訊息文字（可能回顯金鑰，截斷或編碼後遮蔽會失效）

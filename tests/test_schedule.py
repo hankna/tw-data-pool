@@ -105,14 +105,16 @@ def _http_rejecting(resp):
     h = Http(token="SECRET-123")
     calls = []
 
-    def fake_json(url, params=None):
-        calls.append(dict(params))
-        if "token" in params:
+    def fake_json(url, params=None, headers=None):
+        calls.append({**params, **(headers or {})})
+        assert "token" not in params          # 金鑰不得出現在網址參數
+        if headers:
+            assert headers == {"Authorization": "Bearer SECRET-123"}
             return resp()
         return {"status": 200, "data": [{"x": 1}]}
     h.json = fake_json
     assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
-    assert h.token_state == "invalid" and "token" not in calls[-1]
+    assert h.token_state == "invalid" and "Authorization" not in calls[-1]
     return h
 
 
@@ -130,6 +132,27 @@ def test_finmind_token_rejection_never_records_message_text():
     h = _http_rejecting(lambda: {"status": 402, "msg": "Your token SECRET-123 is invalid, token=U0VDUkVULTEyMw=="})
     assert h.token_reason == "FinMind status 402（TaiwanExchangeRate）"
     assert "SECRET" not in h.token_reason and "U0VD" not in h.token_reason
+
+
+def test_finmind_token_sent_as_bearer_header_not_url(monkeypatch):
+    # 實際送出的請求：金鑰只在 Authorization 標頭，網址不含 token
+    import urllib.request
+    from pool.http import Http
+    seen = {}
+
+    class _Resp:
+        headers = {}
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self, n): return b'{"status": 200, "data": [{"x": 1}]}'
+    h = Http(token="SECRET-123")
+    def fake_open(req, timeout=None):
+        seen["url"], seen["auth"] = req.full_url, req.get_header("Authorization")
+        return _Resp()
+    monkeypatch.setattr(h._opener, "open", fake_open)
+    assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
+    assert seen["auth"] == "Bearer SECRET-123" and "SECRET" not in seen["url"] and "token" not in seen["url"]
+    assert h.token_state == "valid"
 
 
 # ---- 備援檢查：只有同一時段已由時鐘處理過才略過 ----
@@ -248,7 +271,7 @@ def test_finmind_error_with_token_never_includes_message():
     from pool.http import Http
     from pool.util import SourceError
     h = Http(token="SECRET-123")
-    h.json = lambda url, params=None: {"status": 400, "msg": "bad request for SECRET-123"}
+    h.json = lambda url, params=None, headers=None: {"status": 400, "msg": "bad request for SECRET-123"}
     with pytest.raises(SourceError) as ei:
         h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
     assert "SECRET" not in str(ei.value) and "status 400" in str(ei.value)
