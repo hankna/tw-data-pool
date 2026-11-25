@@ -29,7 +29,8 @@ class HttpStatus(SourceError):
 
 def _origin(url: str) -> tuple:
     u = urllib.parse.urlsplit(url)
-    return u.scheme.lower(), u.hostname, u.port or {"http": 80, "https": 443}.get(u.scheme.lower())
+    port = u.port if u.port is not None else {"http": 80, "https": 443}.get(u.scheme.lower())
+    return u.scheme.lower(), u.hostname, port
 
 
 class _NoCrossHost(urllib.request.HTTPRedirectHandler):
@@ -83,6 +84,8 @@ class Http:
             except Exception as e:  # noqa: BLE001
                 last = e
                 time.sleep(2 * (i + 1))
+        if isinstance(last, urllib.error.HTTPError) and last.code == 429:
+            raise HttpStatus(429, host)                       # 重試用盡仍限流：保留狀態碼給呼叫端
         raise SourceError(f"連線失敗：{host}：{type(last).__name__}")
 
     def json(self, url: str, params: dict | None = None, headers: dict | None = None):

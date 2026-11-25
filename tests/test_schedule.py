@@ -180,6 +180,26 @@ def test_redirect_same_origin_https_keeps_working():
     assert _redirect("http://www.taifex.com.tw/a", "https://www.taifex.com.tw/b", False) is not None
 
 
+def test_redirect_explicit_port_zero_is_not_default_port():
+    from pool.util import SourceError
+    with pytest.raises(SourceError):
+        _redirect("https://api.finmindtrade.com/api/v4/data", "https://api.finmindtrade.com:0/api/v4/data", True)
+
+
+def test_429_exhausted_keeps_status_code(monkeypatch):
+    import io
+    import urllib.error
+    from pool import http as hmod
+    h = hmod.Http(token="", retries=1)
+    def deny(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {}, io.BytesIO(b""))
+    monkeypatch.setattr(h._opener, "open", deny)
+    monkeypatch.setattr(hmod.time, "sleep", lambda s: None)
+    with pytest.raises(hmod.HttpStatus) as ei:
+        h.bytes("https://api.finmindtrade.com/api/v4/data")
+    assert ei.value.code == 429
+
+
 def _http_seq(*answers):
     """依序回應：帶金鑰的第一次、免金鑰的第二次；HttpStatus 物件代表丟出例外。"""
     from pool.http import Http
@@ -228,8 +248,11 @@ def test_finmind_other_4xx_reraised_without_touching_token():
 def test_finmind_anon_error_never_includes_upstream_message():
     from pool.http import Http
     from pool.util import SourceError
-    h = Http(token=None)
-    h.json = lambda url, params=None, headers=None: {"status": 402, "msg": "quota for SECRET-ish value"}
+    h = Http(token="")                     # 明確停用金鑰，不受環境變數 FINMIND_TOKEN 影響
+    def fake_json(url, params=None, headers=None):
+        assert not headers
+        return {"status": 402, "msg": "quota for SECRET-ish value"}
+    h.json = fake_json
     with pytest.raises(SourceError) as ei:
         h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
     assert str(ei.value) == "FinMind TaiwanExchangeRate：status 402"
