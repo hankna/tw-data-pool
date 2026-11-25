@@ -15,6 +15,7 @@ from ..util import NotYet, SourceError, rnd, iso
 
 BASE = "https://rate.bot.com.tw/xrt/flcsv/0/"
 READY = "16:30"
+_MIMES = {"text/csv", "text/plain", "text/html", "application/octet-stream", "application/json", "application/xml"}
 _FNAME = re.compile(r"ExchangeRate(?:@|%40)(\d{8})(\d{4})\.csv", re.I)   # 檔名可能以 URL 編碼送出
 
 
@@ -29,10 +30,16 @@ def usd_twd(ctx):
     D = ctx.d("tw_last")
     ctx.not_before(D, READY, "臺灣銀行牌告匯率")
     raw, headers = _fetch(ctx, D)
-    rows = list(csv.reader(io.StringIO(raw.decode("utf-8-sig", "replace"))))
+    text = raw.decode("utf-8-sig", "replace")
+    rows = list(csv.reader(io.StringIO(text)))
     usd = [r for r in rows if r and r[0].strip() == "USD"]
     if not usd:
-        raise NotYet(f"臺灣銀行牌告匯率尚無 {iso(D)}")     # 查無資料（週末、未來日期）回純文字 XRT.csv
+        if "查詢找不到" in text or "XRT.csv" in headers.get("content-disposition", ""):
+            raise NotYet(f"臺灣銀行牌告匯率尚無 {iso(D)}")     # 查無資料（週末、未來日期）回純文字 XRT.csv
+        # 既不是牌告 CSV、也不是查無資料（例如被擋下的網頁）：當成錯誤改走 FinMind，只記內容類型與長度，不記原文
+        mime = headers.get("content-type", "").split(";")[0].strip().lower()
+        mime = mime if mime in _MIMES else "unknown"     # 只記白名單內的 MIME 類型，不帶上游自訂參數
+        raise SourceError(f"臺灣銀行回應不是牌告 CSV（content-type {mime}，{len(raw)} bytes）")
     # CSV 沒有日期欄：有報價就必須從檔名確認資料日，缺檔名或格式改變一律拒收、改走 FinMind
     m = _FNAME.search(headers.get("content-disposition", ""))
     if not m:

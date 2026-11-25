@@ -594,6 +594,20 @@ def test_fallback_reason_goes_to_log_not_digest(capsys):
     assert "[來源備援] usd_twd 改用 FinMind：BOT：" in capsys.readouterr().err
 
 
+def test_bot_unexpected_page_is_an_error_not_not_yet():
+    # 例如被防火牆擋下回傳的 HTML：不能當成「尚未公布」，要改走 FinMind 並在日誌留下可判讀的原因
+    from pool.util import SourceError
+    with pytest.raises(SourceError) as ei:
+        _bot("<html><body>Request Rejected SECRET</body></html>", fname=None)
+    assert "不是牌告 CSV" in str(ei.value) and "SECRET" not in str(ei.value)
+    h = _BotHttp("<html>blocked</html>", fname=None)
+    h.last_headers = {"content-type": "text/html; charset=SECRET-param"}
+    from pool.sources import Ctx, bot
+    with pytest.raises(SourceError) as ei:
+        bot.usd_twd(Ctx(http=h, cal={"tw_last": "2026-11-20"}, now=dt.datetime(2026, 11, 20, 17, 0, tzinfo=TW)))
+    assert "content-type text/html，" in str(ei.value) and "SECRET" not in str(ei.value)
+
+
 def test_bot_no_data_text_and_zero_spot_are_not_yet():
     from pool.util import NotYet
     with pytest.raises(NotYet):
