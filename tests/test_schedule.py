@@ -70,10 +70,16 @@ def test_dry_run_queues_successor_first(capsys):
                                      ("17 8 * * 1-5", "16:17"), ("32 9 * * 1-5", "17:32")]]
 
 
-def _recheck_run(tmp_path, monkeypatch, now):
+def _recheck_run(tmp_path, monkeypatch, now, ok=False):
     import pool.run as pr
     from pool.store import Store
-    monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {"status": "pending", "asof": None})
+    if ok:   # 每個項目都拿到目標日的有效值（只驗重抓標記，序列寫入與衍生值換成空操作）
+        monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {
+            "status": "ok", "asof": pr.dg._target(cfg["group"], ctx.cal), "src": "x", "v": {"close": 1}})
+        monkeypatch.setattr(pr, "update_series", lambda *a, **k: None)
+        monkeypatch.setattr(pr, "derive", lambda *a, **k: {})
+    else:
+        monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {"status": "pending", "asof": None})
     days = [dt.date(2026, 10, 1) + dt.timedelta(days=i) for i in range(120)]
     days = [d for d in days if d.weekday() < 5]
     monkeypatch.setattr(pr, "load_days", lambda http, store, today, refresh=False: days)
@@ -190,8 +196,12 @@ def test_recheck_result_is_tagged_in_run_log(tmp_path, monkeypatch):
     assert pr._recheck_tag(True, False, []) == "recheck=ok;" and pr._recheck_tag(False, False, []) == ""
     _recheck_run(tmp_path / "a", monkeypatch, dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW))
     _recheck_run(tmp_path / "b", monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW))
+    _recheck_run(tmp_path / "c", monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW), ok=True)
     note = lambda d: list(_csv.DictReader(open(d / "logs" / "run_log.csv", encoding="utf-8")))[-1]["note"]  # noqa: E731
-    assert note(tmp_path / "a").startswith("recheck=skipped;") and note(tmp_path / "b").startswith("recheck=ok;")
+    assert note(tmp_path / "a").startswith("recheck=skipped;")
+    # 前一交易日的關鍵項目本來就沒抓到、這次仍 pending：不能算重抓成功，備援要再補
+    assert note(tmp_path / "b").startswith("recheck=failed:taiex,")
+    assert note(tmp_path / "c").startswith("recheck=ok;")
 
 
 def test_finmind_error_with_token_never_includes_message():
@@ -513,6 +523,28 @@ def test_bot_accepts_url_encoded_filename():
     assert v["spot_buy"] == 33.05
     v, _ = _bot(MULTI, fname="\"ExchangeRate@202611201600.csv\"")
     assert v["spot_sell"] == 33.2
+
+
+def test_unexpected_exception_text_never_reaches_digest_or_log(capsys):
+    # 非 SourceError 的例外（例如轉型錯誤）訊息可能夾帶上游原文：只記例外類型
+    from pool import digest as dg
+    from pool.sources import Ctx
+
+    def boom(ctx):
+        raise ValueError("could not convert 'SECRET-123' to float")
+    cat = dg.load_catalog()
+    ctx = Ctx(http=None, cal={"tw_last": "2026-11-20"}, now=dt.datetime(2026, 11, 21, 9, 0, tzinfo=TW))
+    orig = dict(dg.REG["usd_twd"])
+    try:
+        dg.REG["usd_twd"] = {"BOT": boom, "FinMind": lambda c: ({"spot_buy": 32.89, "spot_sell": 32.99, "mid": 32.94}, dt.date(2026, 11, 20))}
+        e = dg.resolve("usd_twd", cat["items"]["usd_twd"], ctx, "official_first")
+        dg.REG["usd_twd"] = {"BOT": boom, "FinMind": boom}
+        e2 = dg.resolve("usd_twd", cat["items"]["usd_twd"], ctx, "official_first")
+    finally:
+        dg.REG["usd_twd"] = orig
+    err = capsys.readouterr().err
+    assert e["status"] == "ok" and "BOT：ValueError" in err and "SECRET" not in err
+    assert e2["notes"] == ["BOT：ValueError", "FinMind：ValueError"]
 
 
 def test_fallback_reason_goes_to_log_not_digest(capsys):

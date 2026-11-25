@@ -120,6 +120,14 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
             e["prev"] = {k: prev[k] for k in ("asof", "v", "src") if k in prev}
         items[name] = e
         ctx.items[name] = e
+    if recheck:
+        # 修訂重抓成功＝每個關鍵 tw_close 項目都有原目標日的有效值；本來就沒抓到、這次仍缺的也算失敗，
+        # 讓 05:12 的備援再補一次
+        for name, cfg in cat["items"].items():
+            e = items.get(name) or {}
+            if (cfg.get("key") and cfg["group"] == "tw_close" and name not in recheck_failed
+                    and (e.get("status") not in DONE or e.get("asof") != dg._target(cfg["group"], cal))):
+                recheck_failed.append(name)
     update_series(store, items, ctx.side, now.isoformat(timespec="seconds"))
     tc = items.get("taiex", {}).get("v", {}).get("close") if items.get("taiex", {}).get("status") in DONE else None
     vc = items.get("vix", {}).get("v", {}).get("close") if items.get("vix", {}).get("status") in DONE else None

@@ -101,7 +101,9 @@ def resolve(name: str, cfg: dict, ctx: Ctx, policy: str) -> dict:
         except NotYet:
             notyet += 1
         except Exception as e:  # noqa: BLE001
-            errors.append(f"{vendor}：{type(e).__name__}：{str(e)[:80]}")
+            # 只有程式自己組的 SourceError 保留訊息（帶金鑰的 FinMind 錯誤已不含回應文字）；其他例外（轉型錯誤等）
+            # 的訊息可能夾帶上游原文，digest 與公開日誌都只記例外類型
+            errors.append(f"{vendor}：{type(e).__name__}" + (f"：{str(e)[:80]}" if isinstance(e, SourceError) else ""))
     if not results:
         return {"status": "missing" if errors else "pending", "asof": None, **({"notes": errors} if errors else {})}
     if errors:
