@@ -136,7 +136,7 @@ logs/health.json                        每週產生：各項目公布時間分�
 - 每個時鐘 job 約 5 小時 45 分，啟動時先補跑一次（`slot=catch-up`），結束前 dispatch 自己接棒。`concurrency: clock` 保證同時只有一個時鐘。
 - `clock.yml` 每 3 小時的 cron、`pool.yml` 原有的 cron 都只當斷鏈備援；就算延遲，一啟動也會補跑再接回時刻表。
 - 公開 repo 的託管 runner 不計費，時鐘整天占一個 runner 沒有費用。
-- 監控兩層：`pool.run` 在時鐘觸發卻晚到 30 分鐘以上時設 `health.alert`；報告端 `pool_read.py` 發現關鍵項目過預計公布時間 60 分鐘仍要讀穿，也設 `health.alert`（報告依規定發簡訊），排程失靈當天就會知道。
+- 監控兩層：`pool.run` 在時鐘觸發卻晚到 30 分鐘以上時設 `health.alert`；報告端 `pool_read.py` 發現關鍵項目過預計公布時間 60 分鐘仍要讀穿或仍缺，且資料池在預計公布時間之後沒有任何執行紀錄（看 `logs/run_log.csv`），也設 `health.alert`；資料池有準時跑、只是交易所晚公布的情形不算排程失靈（報告依規定發簡訊），排程失靈當天就會知道。
 - 讀穿取得當日加權時，`pool_read.py` 會把當日 K 棒補進 `taiex_hist`，並用同一支 `derive()` 在本機算衍生值（`derived_via: direct`），報告不必再自行計算。
 
 ## 6. 報告怎麼讀

@@ -51,6 +51,26 @@ def read_data_file(rel: str, data_dir: str | None):
         return _sh(["git", "show", f"FETCH_HEAD:{rel}"], cwd=ROOT)
 
 
+def _last_run_at(data_dir: str | None, digest: dict | None):
+    """資料池最近一次執行的時間：取 logs/run_log.csv 最後的 run_at，與 digest 的 generated_at 取較晚者。
+    digest 只在內容有變時才重寫，單看 generated_at 會把「有跑、但沒有新資料」誤當成沒跑。兩者都讀不到回傳 None。"""
+    times = []
+    try:
+        import csv, io
+        for r in csv.DictReader(io.StringIO(read_data_file("logs/run_log.csv", data_dir).decode("utf-8"))):
+            t = dt.datetime.fromisoformat(r["run_at"]) if r.get("run_at") else None
+            if t and t.tzinfo:
+                times.append(t)
+    except Exception:  # noqa: BLE001
+        pass
+    if digest and digest.get("generated_at"):
+        try:
+            times.append(dt.datetime.fromisoformat(digest["generated_at"]))
+        except ValueError:
+            pass
+    return max(times) if times else None
+
+
 _ZH = [
     ("FinMind:", lambda s: f"FinMind（{s.split(':', 1)[1]}）"),
     ("TWSE:fund/BFI82U", lambda s: "證交所 三大法人買賣金額（BFI82U）"),
@@ -196,7 +216,9 @@ def main(argv=None, http=None) -> int:
         if e.get("src"):
             e["src_zh"] = src_zh(e["src"])
 
-    # 資料池沒按時更新：已過預計公布時間 LATE_MIN 分鐘的關鍵項目，還要靠讀穿或仍缺，就是排程出問題（不是交易所晚公布）
+    # 資料池沒按時更新：關鍵項目已過預計公布時間 LATE_MIN 分鐘還要靠讀穿或仍缺，且資料池在預計公布時間之後
+    # 一次都沒跑過，才判定排程失靈。資料池有準時跑、只是交易所晚公布的情形不算（那由 pool.run 逾 4 小時轉 missing 警示）。
+    last_run = _last_run_at(a.data_dir, digest)
     late = []
     for name in via_direct + missing:
         cfg = cat["items"][name]
@@ -206,7 +228,7 @@ def main(argv=None, http=None) -> int:
             due = cal_mod.due_at(cfg["group"], cfg["due"], cal)
         except Exception:  # noqa: BLE001
             continue
-        if now > due + dt.timedelta(minutes=LATE_MIN):
+        if now > due + dt.timedelta(minutes=LATE_MIN) and (last_run is None or last_run < due):
             late.append(name)
 
     hist, series = [], []
@@ -239,8 +261,9 @@ def main(argv=None, http=None) -> int:
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
     if late:
         health["alert"] = True
-        health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺），"
-                           f"快照產生於 {(digest or {}).get('generated_at') or '無'}"] + list(health.get("notes") or [])
+        health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺，"
+                           f"資料池在預計公布後沒有執行紀錄），最後執行於 "
+                           f"{last_run.isoformat(timespec='minutes') if last_run else '無紀錄'}"] + list(health.get("notes") or [])
     result = {
         "snapshot_id": (digest or {}).get("snapshot_id"), "generated_at": (digest or {}).get("generated_at"),
         "profile": a.profile, "date": a.date, "read_at": now.isoformat(timespec="seconds"),

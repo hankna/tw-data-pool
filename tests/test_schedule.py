@@ -147,6 +147,17 @@ def test_reader_flags_late_pool_and_derives_locally(tmp_path, monkeypatch):
     assert r["derived"]["rv20_annual_pct"] is not None
 
 
+def test_reader_no_alert_when_pool_ran_but_exchange_late(tmp_path, monkeypatch):
+    # 資料池 17:32 準時跑過（加權當時尚未公布、digest 沒變所以沒重寫），18:23 讀穿成功：屬交易所晚公布，不算排程失靈
+    data = _setup(tmp_path, monkeypatch)
+    (data / "logs").mkdir()
+    (data / "logs" / "run_log.csv").write_text(
+        "run_at,trigger,scheduled_for,delay_min\n2026-11-25T17:33:10+08:00,clock,2026-11-25T17:32:00+08:00,1.2\n", "utf-8")
+    r = _read(tmp_path, data, "2026-11-25T18:23:00+08:00")
+    assert r["read"]["late"] == [] and r["health"]["alert"] is False
+    assert r["derived_via"] == "direct"
+
+
 def test_reader_no_alert_soon_after_due(tmp_path, monkeypatch):
     # 加權預計 14:10 公布，14:30 還要讀穿屬正常，不算排程失靈
     r = _read(tmp_path, _setup(tmp_path, monkeypatch), "2026-11-25T14:30:00+08:00")
