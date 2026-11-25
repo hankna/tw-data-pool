@@ -19,9 +19,11 @@ on:
       items:   { description: "只補這些項目，逗號分隔（留空＝全部）", required: false, default: "" }
       force:   { description: "強制重抓（true/false）", required: false, default: "false" }
       slot:    { description: "時鐘觸發的時段（cron 字串，或 catch-up）；手動留空", required: false, default: "" }
+      slot_at: { description: "時鐘觸發的時段精確時間（ISO，台灣時間）；手動留空", required: false, default: "" }
 concurrency:
   group: data-branch
   cancel-in-progress: false
+  queue: max          # 排隊不互相取代：延遲到達的備援 cron 不會取消時鐘送出、正在排隊的時段
 permissions:
   contents: write
 jobs:
@@ -45,12 +47,14 @@ jobs:
           IN_ITEMS: ${{ github.event.inputs.items }}
           IN_FORCE: ${{ github.event.inputs.force }}
           IN_SLOT: ${{ github.event.inputs.slot }}
+          IN_SLOT_AT: ${{ github.event.inputs.slot_at }}
         run: |
           # 時鐘觸發：trigger 記為 clock，時段沿用 cron 字串計算排程延遲
           [ -n "$IN_SLOT" ] && EVENT=clock
           [ -n "$IN_SLOT" ] && [ "$IN_SLOT" != "catch-up" ] && SCHED="$IN_SLOT"
           args=(--data-dir ../data --trigger "$EVENT")
           [ -n "$SCHED" ] && args+=(--cron "$SCHED")
+          [ -n "$IN_SLOT" ] && [ -n "$IN_SLOT_AT" ] && args+=(--scheduled-for "$IN_SLOT_AT")
           [ -n "$IN_DATE" ] && args+=(--date "$IN_DATE")
           [ -n "$IN_ITEMS" ] && args+=(--items "$IN_ITEMS")
           [ "$IN_FORCE" = "true" ] && args+=(--force)

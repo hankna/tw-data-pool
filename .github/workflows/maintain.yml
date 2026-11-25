@@ -7,6 +7,7 @@ on:
 concurrency:
   group: data-branch
   cancel-in-progress: false
+  queue: max          # 與 pool.yml 同一組，排隊不互相取代
 permissions:
   contents: write
 jobs:

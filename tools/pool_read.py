@@ -22,6 +22,8 @@ sys.path.insert(0, str(ROOT))
 REPO = "hankna/tw-data-pool"
 STALE_HOURS = 26
 LATE_MIN = 60   # 關鍵項目過預計公布時間這麼久還要讀穿，判定資料池排程失靈並設 health.alert
+CLOCK_LATE_MIN = 30   # 與 pool/run.py 相同：時鐘觸發晚到這麼多分鐘算警示
+CLOCK_WINDOW_H = 6    # 報告只看最近幾小時內的時鐘延遲事件，避免同一事件在後面每份報告都再發一次簡訊
 DONE = ("ok", "conflict")
 
 
@@ -51,24 +53,35 @@ def read_data_file(rel: str, data_dir: str | None):
         return _sh(["git", "show", f"FETCH_HEAD:{rel}"], cwd=ROOT)
 
 
-def _last_run_at(data_dir: str | None, digest: dict | None):
-    """資料池最近一次執行的時間：取 logs/run_log.csv 最後的 run_at，與 digest 的 generated_at 取較晚者。
-    digest 只在內容有變時才重寫，單看 generated_at 會把「有跑、但沒有新資料」誤當成沒跑。兩者都讀不到回傳 None。"""
-    times = []
+def _run_log(data_dir: str | None, digest: dict | None, now: dt.datetime):
+    """讀 logs/run_log.csv，回傳 (資料池最近一次排程執行時間, 近 CLOCK_WINDOW_H 小時內的時鐘延遲事件)。
+    只認 trigger 為 clock 或 schedule、且 run_at 不晚於 now 的列：手動補抓（可能只補單一項目，或用 --date
+    以模擬時間重算）不代表各項目都有按時抓過。digest 只在內容有變時才重寫，所以不單看 generated_at；
+    run_log 讀不到時才退回用它。"""
+    runs, late = [], []
     try:
         import csv, io
         for r in csv.DictReader(io.StringIO(read_data_file("logs/run_log.csv", data_dir).decode("utf-8"))):
-            t = dt.datetime.fromisoformat(r["run_at"]) if r.get("run_at") else None
-            if t and t.tzinfo:
-                times.append(t)
+            if r.get("trigger") not in ("clock", "schedule") or not r.get("run_at"):
+                continue
+            t = dt.datetime.fromisoformat(r["run_at"])
+            if not t.tzinfo or t > now:
+                continue
+            runs.append(t)
+            if r["trigger"] == "clock" and r.get("scheduled_for") and r.get("delay_min"):
+                sf = dt.datetime.fromisoformat(r["scheduled_for"])
+                if (sf.tzinfo and now - dt.timedelta(hours=CLOCK_WINDOW_H) < sf <= now
+                        and float(r["delay_min"]) > CLOCK_LATE_MIN):
+                    late.append(f"時鐘觸發延遲 {r['delay_min']} 分（應於 {r['scheduled_for'][5:16].replace('T', ' ')} 執行）")
+        if runs:
+            return max(runs), late
     except Exception:  # noqa: BLE001
         pass
-    if digest and digest.get("generated_at"):
-        try:
-            times.append(dt.datetime.fromisoformat(digest["generated_at"]))
-        except ValueError:
-            pass
-    return max(times) if times else None
+    try:
+        g = dt.datetime.fromisoformat((digest or {}).get("generated_at") or "")
+        return (g if g.tzinfo and g <= now else None), late
+    except ValueError:
+        return None, late
 
 
 _ZH = [
@@ -218,7 +231,7 @@ def main(argv=None, http=None) -> int:
 
     # 資料池沒按時更新：關鍵項目已過預計公布時間 LATE_MIN 分鐘還要靠讀穿或仍缺，且資料池在預計公布時間之後
     # 一次都沒跑過，才判定排程失靈。資料池有準時跑、只是交易所晚公布的情形不算（那由 pool.run 逾 4 小時轉 missing 警示）。
-    last_run = _last_run_at(a.data_dir, digest)
+    last_run, clock_late = _run_log(a.data_dir, digest, now)
     late = []
     for name in via_direct + missing:
         cfg = cat["items"][name]
@@ -240,13 +253,16 @@ def main(argv=None, http=None) -> int:
     except Exception:  # noqa: BLE001
         notes.append("讀不到加權指數歷史序列")
     tx = out_items.get("taiex") or {}
-    if tx.get("status") in DONE and tx.get("asof") == cal["tw_last"] and (not hist or hist[-1][0] != cal["tw_last"]):
-        # 讀穿取得的當日加權：補進近 60 日序列，報告才有今天這根
-        v = tx["v"]
-        hist = (hist + [[tx["asof"], v.get("open"), v.get("high"), v.get("low"), v.get("close")]])[-60:]
-        series = series + [{"date": tx["asof"], "close": v.get("close")}]
+    if tx.get("status") in DONE and tx.get("asof") == cal["tw_last"] and (
+            tx.get("via") == "direct" or not hist or hist[-1][0] != cal["tw_last"]):
+        # 當日加權補進近 60 日序列；讀穿值一律覆蓋序列裡同日的舊 K 棒（可能是修訂前的值），RV 與點數才用同一個收盤
+        v, d0 = tx["v"], tx["asof"]
+        hist = ([h for h in hist if h[0] != d0] + [[d0, v.get("open"), v.get("high"), v.get("low"), v.get("close")]])[-60:]
+        series = [r for r in series if r["date"] != d0] + [{"date": d0, "close": v.get("close")}]
     ex = 3 if (digest is None and not via_direct) else 2 if missing else 1 if via_direct else 0
-    derived = (digest or {}).get("derived") if (digest and "taiex" not in via_direct and not stale) else None
+    derived = (digest or {}).get("derived") if (digest and tx.get("via") == "pool" and not stale) else None
+    if derived and ((derived.get("closes_7") or [[None]])[-1][0] != tx.get("asof")):
+        derived = None   # 資料池的衍生值算自別的資料日（例如當日加權仍缺），不沿用
     derived_via = "pool" if derived else None
     if derived is None and tx.get("status") in DONE and tx.get("asof") == cal["tw_last"] and series:
         # 加權是讀穿來的：用同一支 derive() 在本機算，定義與資料池完全相同
@@ -259,6 +275,9 @@ def main(argv=None, http=None) -> int:
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
+    if clock_late:
+        health["alert"] = True
+        health["notes"] = [n for n in clock_late if n not in (health.get("notes") or [])] + list(health.get("notes") or [])
     if late:
         health["alert"] = True
         health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺，"
