@@ -46,6 +46,7 @@ date,item,first_ok_at,src
 2026-11-24,us_index,2026-11-25T12:06:54+08:00,FinMind:USStockPrice
 2026-11-24,us_stock,2026-11-25T12:06:54+08:00,FinMind:USStockPrice
 2026-11-24,us_vix,2026-11-25T12:06:54+08:00,FinMind:USStockPrice
+2026-11-24,us_yield,2026-11-26T01:11:00+08:00,FinMind:GovernmentBondsYield
 2026-11-24,usd_twd,2026-11-25T01:41:27+08:00,FinMind:TaiwanExchangeRate
 2026-11-24,vix,2026-11-25T01:41:27+08:00,TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt
 2026-11-25,fut_inst,2026-11-25T21:35:10+08:00,FinMind:TaiwanFuturesInstitutionalInvestors

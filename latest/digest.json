@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-25T22:59:44+08:00",
- "snapshot_id": "68aa3a2a",
+ "generated_at": "2026-11-26T01:11:00+08:00",
+ "snapshot_id": "2a197275",
  "calendar": {
   "tw_last": "2026-11-25",
   "tw_prev": "2026-11-24",
@@ -319,12 +319,12 @@
    }
   },
   "us_yield": {
-   "asof": "2026-11-23",
+   "asof": "2026-11-24",
    "status": "ok",
    "src": "FinMind:GovernmentBondsYield",
    "v": {
-    "y10": 4.92,
-    "y10_chg_bp": 0.0,
+    "y10": 4.91,
+    "y10_chg_bp": -1.0,
     "y2": 4.63,
     "y2_chg_bp": 0.0
    }
