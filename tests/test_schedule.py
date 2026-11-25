@@ -191,13 +191,15 @@ def test_429_exhausted_keeps_status_code(monkeypatch):
     import urllib.error
     from pool import http as hmod
     h = hmod.Http(token="", retries=1)
+    calls = []
     def deny(req, timeout=None):
+        calls.append(req.full_url)
         raise urllib.error.HTTPError(req.full_url, 429, "Too Many", {}, io.BytesIO(b""))
     monkeypatch.setattr(h._opener, "open", deny)
     monkeypatch.setattr(hmod.time, "sleep", lambda s: None)
     with pytest.raises(hmod.HttpStatus) as ei:
         h.bytes("https://api.finmindtrade.com/api/v4/data")
-    assert ei.value.code == 429
+    assert ei.value.code == 429 and len(calls) == 2      # 先重試（retries=1），用盡後才拋出
 
 
 def _http_seq(*answers):
