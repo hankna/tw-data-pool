@@ -37,6 +37,7 @@ class Http:
     def __init__(self, token: str | None = None, timeout: int = 40, retries: int = 2):
         self.token = token if token is not None else os.environ.get("FINMIND_TOKEN") or None
         self.token_state = "none" if not self.token else "valid"
+        self.token_reason = ""
         self.timeout, self.retries = timeout, retries
         self._opener = urllib.request.build_opener(_NoCrossHost)
 
@@ -87,10 +88,13 @@ class Http:
             try:
                 j = self.json(FINMIND, {**p, "token": self.token})
                 bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
+                why = f"status {j.get('status')}：{str(j.get('msg', ''))[:80]}"
             except HttpStatus as e:
                 bad = e.code in (400, 401, 403)
+                why = f"HTTP {e.code}（{dataset}）"
             if bad:
                 self.token_state = "invalid"   # 金鑰失效：本次改免金鑰
+                self.token_reason = why.replace(self.token, "***")
                 j = self.json(FINMIND, p)
         else:
             j = self.json(FINMIND, p)

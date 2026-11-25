@@ -19,7 +19,6 @@ from .util import iso, parse_date
 DONE = ("ok", "conflict")
 TIMEOUT_H = 4   # 過預計公布時間 4 小時仍未公布，由 pending 改標 missing（會觸發警示）
 CLOCK_LATE_MIN = 30   # 時鐘觸發的執行晚於時段這麼多分鐘，health 標警示
-RECHECK_MAX_H = 6     # 05:12 修訂重抓晚於原時段這麼久就略過（此時「目標日」可能已換成當天，重抓不到前一交易日的修訂）
 
 
 def load_days(http, store: Store, today: dt.date, refresh: bool = False):
@@ -68,19 +67,21 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
         scheduled_for=None, catalog=None, date=None) -> dict:
     t0 = time.time()
     cat = catalog or dg.load_catalog()
-    skip_recheck = bool(recheck and scheduled_for
-                        and now - cal_mod.parse_now(scheduled_for) > dt.timedelta(hours=RECHECK_MAX_H))
-    if skip_recheck:
-        recheck = False
     policy = cat.get("source_policy", "official_first")
     days = load_days(http, store, now.date())
     cal = cal_mod.compute(now, days)
+    # 05:12 修訂重抓要查的是「原時段當下的目標日」。執行延遲到目標日已換（過了下一個收盤）就略過，
+    # 否則會把當天的資料當成修訂重抓，前一交易日的修訂反而沒查到。目標日沒變就照常重抓，不論晚多久。
+    skip_recheck = bool(recheck and scheduled_for
+                        and cal_mod.compute(cal_mod.parse_now(scheduled_for), days)["tw_last"] != cal["tw_last"])
+    if skip_recheck:
+        recheck = False
     old = store.read_digest() or {}
     old_items = old.get("items", {})
     ctx = Ctx(http=http, cal=cal, now=now, days=days, series=store)
     items, notes = {}, []
     if skip_recheck:
-        notes.append(f"修訂重抓逾時略過（應於 {scheduled_for[5:16].replace('T', ' ')} 執行），前一交易日的修訂需人工補抓")
+        notes.append(f"修訂重抓略過（應於 {scheduled_for[5:16].replace('T', ' ')} 執行，執行時目標日已換），前一交易日的修訂未檢查")
     for name, cfg in cat["items"].items():
         tgt = dg._target(cfg["group"], cal)
         prev = old_items.get(name)
@@ -131,6 +132,8 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     # 時鐘觸發卻晚到，代表 clock.yml 的鏈出了問題；GitHub 自己的 cron（備援）本來就會晚，不列入
     late = trigger == "clock" and delay != "" and delay > CLOCK_LATE_MIN
     # bad 與 clock_late 分開存：報告端可只沿用資料健康狀態，時鐘延遲改依 run_log 的時間窗判斷
+    if getattr(http, "token_state", "none") == "invalid":
+        notes.append(f"FinMind 金鑰被拒（{getattr(http, 'token_reason', '原因不明')}），本次改用免金鑰額度")
     health = {"alert": bool(bad) or late, "bad": bad, "clock_late": late, "token": getattr(http, "token_state", "none"),
               "notes": notes + [f"{n}：{items[n]['status']}" for n in bad]
               + ([f"時鐘觸發延遲 {delay} 分（應於 {scheduled_for[11:16]} 執行）"] if late else [])}

@@ -26,18 +26,41 @@ concurrency:
   queue: max          # 排隊不互相取代：延遲到達的備援 cron 不會取消時鐘送出、正在排隊的時段
 permissions:
   contents: write
+  actions: read       # 備援檢查要讀 clock.yml 與 pool.yml 的執行狀態
 jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # GitHub 的排程只是備援：時鐘正常時（有時鐘在跑，且 6.5 小時內有時鐘送出的 pool 執行成功）就略過，
+      # 避免延遲 6～12 小時才到的排程重複抓取、留下誤導的延遲紀錄。時鐘壞掉時兩個條件不成立，照常執行。
+      - name: 備援檢查
+        id: gate
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          live=$(gh run list --workflow clock.yml --status in_progress --json databaseId --jq length 2>/dev/null || echo 0)
+          since=$(date -u -d '6 hours 30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          ok=$(gh run list --workflow pool.yml --event workflow_dispatch --status success --limit 20 \
+                 --json createdAt --jq "[.[] | select(.createdAt >= \"$since\")] | length" 2>/dev/null || echo 0)
+          echo "時鐘執行中 ${live} 個；6.5 小時內成功的 dispatch 執行 ${ok} 次"
+          if [ "${live:-0}" -gt 0 ] && [ "${ok:-0}" -gt 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "時鐘正常，備援排程略過"
+          fi
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.skip != 'true'
         with: { ref: main, path: code }
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.skip != 'true'
         with: { ref: data, path: data }
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.skip != 'true'
         with: { python-version: "3.12" }
       - name: 執行
+        if: steps.gate.outputs.skip != 'true'
         working-directory: code
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
@@ -61,6 +84,7 @@ jobs:
           [ "$SCHED" = "12 21 * * 1-5" ] && args+=(--recheck)
           python -m pool.run "${args[@]}"
       - name: 推送到 data 分支
+        if: steps.gate.outputs.skip != 'true'
         working-directory: data
         run: |
           git config user.name "tw-data-pool[bot]"

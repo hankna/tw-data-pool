@@ -70,16 +70,44 @@ def test_dry_run_queues_successor_first(capsys):
                                      ("17 8 * * 1-5", "16:17"), ("32 9 * * 1-5", "17:32")]]
 
 
-def test_recheck_skipped_when_too_late(tmp_path, monkeypatch):
-    # 05:12 的修訂重抓若拖到下午才跑，目標日已換成當天：略過並留紀錄，不能假裝查過前一日修訂
+def _recheck_run(tmp_path, monkeypatch, now):
     import pool.run as pr
     from pool.store import Store
     monkeypatch.setattr(pr.dg, "resolve", lambda name, cfg, ctx, policy: {"status": "pending", "asof": None})
-    monkeypatch.setattr(pr, "load_days", lambda http, store, today, refresh=False: [dt.date(2026, 11, 24), dt.date(2026, 11, 25)])
-    out = pr.run(object(), Store(tmp_path), dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW), recheck=True, trigger="schedule",
-                 scheduled_for="2026-11-25T05:12:00+08:00")
-    assert any(n.startswith("修訂重抓逾時略過") for n in out["health"]["notes"])
+    days = [dt.date(2026, 10, 1) + dt.timedelta(days=i) for i in range(120)]
+    days = [d for d in days if d.weekday() < 5]
+    monkeypatch.setattr(pr, "load_days", lambda http, store, today, refresh=False: days)
+    return pr.run(object(), Store(tmp_path), now, recheck=True, trigger="schedule",
+                  scheduled_for="2026-11-25T05:12:00+08:00")
+
+
+def test_recheck_skipped_when_target_day_changed(tmp_path, monkeypatch):
+    # 05:12 的修訂重抓拖到 14:30（已過 11/25 收盤）才跑：目標日已從 11/24 換成 11/25，略過並留紀錄
+    out = _recheck_run(tmp_path, monkeypatch, dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW))
+    assert any(n.startswith("修訂重抓略過") for n in out["health"]["notes"])
     assert isinstance(out["health"]["bad"], list) and out["health"]["clock_late"] is False
+
+
+def test_recheck_kept_when_late_but_same_target_day(tmp_path, monkeypatch):
+    # 晚了 7 小時但還沒收盤，目標日仍是 11/24：照常重抓
+    out = _recheck_run(tmp_path, monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW))
+    assert not any(n.startswith("修訂重抓略過") for n in out["health"]["notes"])
+
+
+def test_finmind_token_rejection_reason_recorded_without_token():
+    from pool.http import Http, HttpStatus
+    h = Http(token="SECRET-123")
+    calls = []
+
+    def fake_json(url, params=None):
+        calls.append(dict(params))
+        if "token" in params:
+            raise HttpStatus(401, "api.finmindtrade.com")
+        return {"status": 200, "data": [{"x": 1}]}
+    h.json = fake_json
+    assert h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25") == [{"x": 1}]
+    assert h.token_state == "invalid" and "401" in h.token_reason and "SECRET" not in h.token_reason
+    assert "token" not in calls[-1]
 
 
 def test_new_clock_replays_slot_missed_during_handover(capsys):
