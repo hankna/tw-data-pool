@@ -130,15 +130,14 @@ def test_finmind_token_rejection_never_records_message_text():
 gate = _load("fallback_gate", "tools/fallback_gate.py")
 
 
-def _gate(tmp_path, cron, now, *rows):
-    if rows is not None:
-        (tmp_path / "logs").mkdir(exist_ok=True)
-        (tmp_path / "logs" / "run_log.csv").write_text(
-            "run_at,trigger,scheduled_for,delay_min\n" + "".join(r + "\n" for r in rows), "utf-8")
+def _gate(tmp_path, cron, now, *rows, recheck=False):
+    (tmp_path / "logs").mkdir(exist_ok=True)
+    (tmp_path / "logs" / "run_log.csv").write_text(
+        "run_at,trigger,scheduled_for,delay_min,note\n" + "".join(r + "\n" for r in rows), "utf-8")
     import contextlib, io
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        assert gate.main(["--cron", cron, "--data-dir", str(tmp_path), "--now", now]) == 0
+        assert gate.main(["--cron", cron, "--data-dir", str(tmp_path), "--now", now] + (["--recheck"] if recheck else [])) == 0
     return dict(ln.split("=", 1) for ln in buf.getvalue().split())
 
 
@@ -162,6 +161,47 @@ def test_gate_runs_without_log_and_respects_weekday(tmp_path):
     shutil.rmtree(tmp_path / "logs", ignore_errors=True)
     out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-30T12:00:00+08:00")
     assert out == {"slot_at": "2026-11-28T05:12:00+08:00", "skip": "false"}
+
+
+def test_gate_recheck_slot_needs_successful_recheck(tmp_path):
+    slot = "2026-11-26T05:12:40+08:00,clock,2026-11-26T05:12:00+08:00,0.7,"
+    run = lambda note: _gate(tmp_path, "12 21 * * 1-5", "2026-11-26T12:00:00+08:00", slot + note, recheck=True)  # noqa: E731
+    assert run("recheck=ok;")["skip"] == "true"
+    assert run("recheck=skipped;")["skip"] == "true"
+    # 05:12 來源暫時故障、沿用原值：12:00 來源已恢復，備援要再查一次修訂
+    assert run("recheck=failed:taiex,txo_oi;taiex 重抓失敗，沿用原值")["skip"] == "false"
+    assert run("")["skip"] == "false"                       # 舊紀錄沒有標記：照常執行
+
+
+def test_gate_bad_log_encoding_runs_normally(tmp_path):
+    (tmp_path / "logs").mkdir(exist_ok=True)
+    (tmp_path / "logs" / "run_log.csv").write_bytes(b"run_at,trigger,scheduled_for\n\xff\xfe\x00bad\n")
+    import contextlib, io
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert gate.main(["--cron", "12 6 * * 1-5", "--data-dir", str(tmp_path), "--now", "2026-11-26T18:00:00+08:00"]) == 0
+    assert dict(ln.split("=", 1) for ln in buf.getvalue().split()) == {"slot_at": "2026-11-26T14:12:00+08:00", "skip": "false"}
+
+
+def test_recheck_result_is_tagged_in_run_log(tmp_path, monkeypatch):
+    import csv as _csv
+    from pool import run as pr
+    assert pr._recheck_tag(True, False, ["taiex"]) == "recheck=failed:taiex;"
+    assert pr._recheck_tag(True, False, []) == "recheck=ok;" and pr._recheck_tag(False, False, []) == ""
+    _recheck_run(tmp_path / "a", monkeypatch, dt.datetime(2026, 11, 25, 14, 30, tzinfo=TW))
+    _recheck_run(tmp_path / "b", monkeypatch, dt.datetime(2026, 11, 25, 12, 10, tzinfo=TW))
+    note = lambda d: list(_csv.DictReader(open(d / "logs" / "run_log.csv", encoding="utf-8")))[-1]["note"]  # noqa: E731
+    assert note(tmp_path / "a").startswith("recheck=skipped;") and note(tmp_path / "b").startswith("recheck=ok;")
+
+
+def test_finmind_error_with_token_never_includes_message():
+    from pool.http import Http
+    from pool.util import SourceError
+    h = Http(token="SECRET-123")
+    h.json = lambda url, params=None: {"status": 400, "msg": "bad request for SECRET-123"}
+    with pytest.raises(SourceError) as ei:
+        h.finmind("TaiwanExchangeRate", "USD", "2026-11-20", "2026-11-25")
+    assert "SECRET" not in str(ei.value) and "status 400" in str(ei.value)
 
 
 def test_gate_unparseable_cron_runs_normally(tmp_path):

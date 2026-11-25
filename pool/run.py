@@ -79,7 +79,7 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     old = store.read_digest() or {}
     old_items = old.get("items", {})
     ctx = Ctx(http=http, cal=cal, now=now, days=days, series=store)
-    items, notes = {}, []
+    items, notes, recheck_failed = {}, [], []
     if skip_recheck:
         notes.append(f"修訂重抓略過（應於 {scheduled_for[5:16].replace('T', ' ')} 執行，執行時目標日已換），前一交易日的修訂未檢查")
     for name, cfg in cat["items"].items():
@@ -102,6 +102,8 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
             if e["status"] not in DONE and done:
                 # 重抓（修訂偵測或強制）失敗時沿用原值，不讓暫時性的連線問題蓋掉已取得的資料
                 notes.append(f"{name} 重抓失敗，沿用原值")
+                if recheck and cfg.get("key") and cfg["group"] == "tw_close":
+                    recheck_failed.append(name)
                 e = prev
             elif e["status"] == "pending" and now > due + dt.timedelta(hours=TIMEOUT_H):
                 e = {**e, "status": "missing", "notes": e.get("notes", []) + [f"逾預計時間 {TIMEOUT_H} 小時仍未公布"]}
@@ -151,9 +153,18 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
     store.log_run({"run_at": now.isoformat(timespec="seconds"), "trigger": trigger, "scheduled_for": scheduled_for or "",
                    "delay_min": delay, "filled": filled,
                    "pending": cnt("pending"), "missing": cnt("missing"), "conflict": cnt("conflict"),
-                   "seconds": round(time.time() - t0, 1), "note": ";".join(notes)[:120]})
+                   "seconds": round(time.time() - t0, 1), "note": _recheck_tag(recheck, skip_recheck, recheck_failed) + ";".join(notes)[:120]})
     out["_changed"] = changed
     return out
+
+
+def _recheck_tag(recheck, skipped, failed) -> str:
+    """run_log note 開頭的修訂重抓結果（備援檢查據此判斷 05:12 是否真的查完；不放進截斷範圍）。"""
+    if skipped:
+        return "recheck=skipped;"
+    if recheck:
+        return f"recheck=failed:{','.join(failed)};" if failed else "recheck=ok;"
+    return ""
 
 
 def sched_from_cron(cron: str, now: dt.datetime) -> str:

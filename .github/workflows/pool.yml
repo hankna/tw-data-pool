@@ -42,7 +42,10 @@ jobs:
         if: github.event_name == 'schedule'
         env:
           SCHED: ${{ github.event.schedule }}
-        run: python3 code/tools/fallback_gate.py --cron "$SCHED" --data-dir data >> "$GITHUB_OUTPUT"
+        run: |
+          # 05:12 時段（與下方 --recheck 同一個 cron）要確認修訂重抓確實完成
+          extra=(); [ "$SCHED" = "12 21 * * 1-5" ] && extra=(--recheck)
+          python3 code/tools/fallback_gate.py --cron "$SCHED" --data-dir data "${extra[@]}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         if: steps.gate.outputs.skip != 'true'
         with: { python-version: "3.12" }

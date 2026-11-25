@@ -84,8 +84,10 @@ class Http:
         p = {"dataset": dataset, "start_date": start, "end_date": end}
         if data_id:
             p["data_id"] = data_id
+        with_token = False
         if self.token and self.token_state != "invalid":
             try:
+                with_token = True
                 j = self.json(FINMIND, {**p, "token": self.token})
                 bad = j.get("status") != 200 and "oken" in str(j.get("msg", ""))
                 st = j.get("status")
@@ -97,9 +99,14 @@ class Http:
             if bad:
                 self.token_state = "invalid"   # 金鑰失效：本次改免金鑰
                 self.token_reason = f"{why}（{dataset}）"
+                with_token = False
                 j = self.json(FINMIND, p)
         else:
             j = self.json(FINMIND, p)
         if j.get("status") != 200:
-            raise SourceError(f"FinMind {dataset}：{str(j.get('msg'))[:60]}")
+            st = j.get("status")
+            code = st if isinstance(st, int) and not isinstance(st, bool) else "?"
+            if with_token:   # 帶金鑰的回應訊息可能回顯金鑰：錯誤會進公開 digest，只留資料集與狀態碼
+                raise SourceError(f"FinMind {dataset}：status {code}")
+            raise SourceError(f"FinMind {dataset}：status {code}：{str(j.get('msg'))[:60]}")
         return j.get("data") or []
