@@ -15,7 +15,7 @@ from ..util import NotYet, SourceError, rnd, iso
 
 BASE = "https://rate.bot.com.tw/xrt/flcsv/0/"
 READY = "16:30"
-_FNAME = re.compile(r"ExchangeRate@(\d{8})(\d{4})\.csv")
+_FNAME = re.compile(r"ExchangeRate(?:@|%40)(\d{8})(\d{4})\.csv", re.I)   # 檔名可能以 URL 編碼送出
 
 
 def _fetch(ctx, D):

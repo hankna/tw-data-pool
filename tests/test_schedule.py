@@ -508,6 +508,20 @@ def test_bot_rejects_swapped_columns_wrong_date_and_bad_numbers():
             _bot(text, **kw)
 
 
+def test_bot_accepts_url_encoded_filename():
+    v, _ = _bot(MULTI, fname="ExchangeRate%40202611201600.csv")
+    assert v["spot_buy"] == 33.05
+    v, _ = _bot(MULTI, fname="\"ExchangeRate@202611201600.csv\"")
+    assert v["spot_sell"] == 33.2
+
+
+def test_fallback_reason_goes_to_log_not_digest(capsys):
+    from tests.test_golden import build
+    out, _ = build(off={"rate.bot.com.tw"})
+    assert out["items"]["usd_twd"]["src"].startswith("FinMind:") and "notes" not in out["items"]["usd_twd"]
+    assert "[來源備援] usd_twd 改用 FinMind：BOT：" in capsys.readouterr().err
+
+
 def test_bot_no_data_text_and_zero_spot_are_not_yet():
     from pool.util import NotYet
     with pytest.raises(NotYet):
