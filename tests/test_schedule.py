@@ -136,7 +136,24 @@ def test_finmind_token_rejection_never_records_message_text():
 gate = _load("fallback_gate", "tools/fallback_gate.py")
 
 
-def _gate(tmp_path, cron, now, *rows, recheck=False):
+def _complete_digest(data, now, missing=()):
+    """依 pool 的日曆與目錄，寫出「此刻所有已到期項目都齊全」的 data 目錄（missing 內的項目標成 missing）。"""
+    from pool import calendar as cal_mod, digest as dg
+    from pool.util import iso
+    days = [d for d in (dt.date(2026, 10, 1) + dt.timedelta(days=i) for i in range(120)) if d.weekday() < 5]
+    (data / "series").mkdir(parents=True, exist_ok=True)
+    (data / "series" / "tw_calendar.csv").write_text("date\n" + "\n".join(iso(d) for d in days) + "\n", "utf-8")
+    cal = cal_mod.compute(dt.datetime.fromisoformat(now).astimezone(cal_mod.TZ), days)
+    items = {n: ({"status": "missing", "asof": None} if n in missing else
+                 {"status": "ok", "asof": dg._target(c["group"], cal)})
+             for n, c in dg.load_catalog()["items"].items() if not n.startswith("_")}
+    (data / "latest").mkdir(exist_ok=True)
+    (data / "latest" / "digest.json").write_text(json.dumps({"items": items}), "utf-8")
+
+
+def _gate(tmp_path, cron, now, *rows, recheck=False, missing=(), digest=True):
+    if digest:
+        _complete_digest(tmp_path, now, missing)
     (tmp_path / "logs").mkdir(exist_ok=True)
     (tmp_path / "logs" / "run_log.csv").write_text(
         "run_at,trigger,scheduled_for,delay_min,note\n" + "".join(r + "\n" for r in rows), "utf-8")
@@ -167,6 +184,16 @@ def test_gate_runs_without_log_and_respects_weekday(tmp_path):
     shutil.rmtree(tmp_path / "logs", ignore_errors=True)
     out = _gate(tmp_path, "12 21 * * 1-5", "2026-11-30T12:00:00+08:00")
     assert out == {"slot_at": "2026-11-28T05:12:00+08:00", "skip": "false"}
+
+
+def test_gate_runs_when_slot_done_but_due_items_still_missing(tmp_path):
+    # 21:52 時鐘跑過但 margin 因上游故障沒抓到；06:15 前到達的 21:52 備援要照常執行補齊
+    row = "2026-11-25T21:52:40+08:00,clock,2026-11-25T21:52:00+08:00,0.7,"
+    assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row)["skip"] == "true"
+    assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row, missing=("margin",))["skip"] == "false"
+    import shutil
+    shutil.rmtree(tmp_path / "latest")
+    assert _gate(tmp_path, "52 13 * * 1-5", "2026-11-26T06:10:00+08:00", row, digest=False)["skip"] == "false"
 
 
 def test_gate_recheck_slot_needs_successful_recheck(tmp_path):
