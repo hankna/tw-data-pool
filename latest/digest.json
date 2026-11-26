@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-26T09:05:29+08:00",
- "snapshot_id": "6be455d9",
+ "generated_at": "2026-11-26T11:30:55+08:00",
+ "snapshot_id": "14959936",
  "calendar": {
   "tw_last": "2026-11-25",
   "tw_prev": "2026-11-24",
@@ -52,22 +52,22 @@
   "fut_inst": {
    "asof": "2026-11-25",
    "status": "ok",
-   "src": "FinMind:TaiwanFuturesInstitutionalInvestors",
+   "src": "TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFuturesContractsBytheDate",
    "v": {
-    "foreign": {
-     "net_oi": -105709,
-     "chg": -2527
+    "dealer": {
+     "net_oi": -651,
+     "chg": -418
     },
     "trust": {
      "net_oi": 100918,
      "chg": 2904
     },
-    "dealer": {
-     "net_oi": -651,
-     "chg": -418
+    "foreign": {
+     "net_oi": -105709,
+     "chg": -2527
     }
    },
-   "xcheck": "n/a",
+   "xcheck": "match",
    "rev": 0
   },
   "opt_inst": {
@@ -177,20 +177,20 @@
      "put": 36114
     }
    },
-   "xcheck": "n/a",
+   "xcheck": "match",
    "rev": 0
   },
   "pc_ratio": {
    "asof": "2026-11-25",
    "status": "ok",
-   "src": "derived:txo_oi（排除當日到期）",
+   "src": "TAIFEX:openapi/PutCallRatio",
    "v": {
     "oi_pct": 39.84,
-    "vol_pct": null,
+    "vol_pct": 84.13,
     "put_oi": 36114,
     "call_oi": 90639
    },
-   "rev": 0
+   "rev": 1
   },
   "large_traders": {
    "asof": "2026-11-25",
@@ -326,8 +326,11 @@
    }
   },
   "us_yield": {
-   "status": "pending",
-   "asof": null
+   "status": "missing",
+   "asof": null,
+   "notes": [
+    "逾預計時間 4 小時仍未公布"
+   ]
   }
  },
  "derived": {
@@ -370,6 +373,8 @@
   "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": []
+  "notes": [
+   "pc_ratio 修訂（rev 1）"
+  ]
  }
 }
