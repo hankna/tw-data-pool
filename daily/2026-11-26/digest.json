@@ -1,6 +1,6 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-27T05:12:07+08:00",
+ "generated_at": "2026-11-27T06:02:07+08:00",
  "snapshot_id": "be42aa3a",
  "calendar": {
   "tw_last": "2026-11-26",
@@ -584,9 +584,6 @@
   "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": [
-   "taiex 修訂（rev 1）",
-   "inst_spot 修訂（rev 1）"
-  ]
+  "notes": []
  }
 }
