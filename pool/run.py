@@ -105,8 +105,8 @@ def run(http, store: Store, now: dt.datetime, *, only=None, force=False, recheck
                 if recheck and cfg.get("key") and cfg["group"] == "tw_close":
                     recheck_failed.append(name)
                 e = prev
-            elif e["status"] == "pending" and now > due + dt.timedelta(hours=TIMEOUT_H):
-                e = {**e, "status": "missing", "notes": e.get("notes", []) + [f"逾預計時間 {TIMEOUT_H} 小時仍未公布"]}
+            elif e["status"] == "pending" and now > due + dt.timedelta(hours=cfg.get("timeout_h", TIMEOUT_H)):
+                e = {**e, "status": "missing", "notes": e.get("notes", []) + [f"逾預計時間 {cfg.get('timeout_h', TIMEOUT_H)} 小時仍未公布"]}
             if e is prev:
                 pass
             elif e["status"] in DONE:
