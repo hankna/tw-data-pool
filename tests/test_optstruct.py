@@ -287,3 +287,112 @@ def test_reader_reads_through_with_same_definition():
     assert r["items"]["opt_struct"]["via"] == "direct"
     assert r["items"]["opt_struct"]["v"]["vol"]["month"] == full["items"]["opt_struct"]["v"]["vol"]["month"]
     assert r["items"]["opt_struct"]["v"]["flow"] == full["items"]["opt_struct"]["v"]["flow"]
+
+
+# ---------- Codex 合併後覆核 #9 的 7 項指正（2026-11-26） ----------
+def test_atm_iv_rejects_out_of_range_leg_before_averaging(monkeypatch):
+    # 買權反推 1%、賣權 5%：原本平均成「有效」的 3%，現在 1% 先被剔除，只剩 5%
+    ch = {40000.0: {"call": 1.0, "put": 2.0}}
+    seq = iter([0.01, 0.05])
+    monkeypatch.setattr(osx, "implied_vol", lambda *a, **k: next(seq))
+    iv, k0 = osx.atm_iv(ch, 40000.0, 0.05)
+    assert k0 == 40000 and iv == pytest.approx(0.05)
+    seq2 = iter([0.01, 5.0])                       # 兩邊都超界：沒有價平 IV
+    monkeypatch.setattr(osx, "implied_vol", lambda *a, **k: next(seq2))
+    assert osx.atm_iv(ch, 40000.0, 0.05)[0] is None
+
+
+def test_rr_interpolation_skips_out_of_range_strikes():
+    F, tau = 40000.0, 20 / 365
+    good = _chain(F, tau, lambda k: 0.5)
+    base = osx.risk_reversal(good, F, tau)
+    bad = {k: dict(v) for k, v in good.items()}
+    # 把一個價外賣權的價格灌到反推超過 400% 的程度：這個點不能進內插
+    k_bad = 37000.0
+    bad[k_bad]["put"] = osx.b76(F, k_bad, tau, 4.5, "put")
+    assert osx.implied_vol(bad[k_bad]["put"], F, k_bad, tau, "put") > osx.IV_MAX
+    got = osx.risk_reversal(bad, F, tau)
+    assert got is not None and got["put25"] == pytest.approx(base["put25"], abs=1e-6)
+
+
+def _series(n=70, seed=11):
+    vix, tai = _vix_taiex(n=n, seed=seed)
+    days = [dt.date.fromisoformat(d) for d, _ in tai]
+    return vix, tai, days
+
+
+def test_residual_never_pairs_across_a_missing_trading_day():
+    vix, tai, days = _series(n=40)                 # 視窗不滿 60：缺一天時樣本數的變化看得出來
+    d = vix[-1][0]
+    full = osx.iv_residual(vix, tai, d, days=days)
+    # 前一交易日缺 VIX：當日沒有可比的基準，不能拿兩天前當昨天
+    assert osx.iv_residual(vix[:-2] + vix[-1:], tai, d, days=days) is None
+    # 加權缺前一交易日也一樣
+    assert osx.iv_residual(vix, tai[:-2] + tai[-1:], d, days=days) is None
+    # 視窗中間缺一天：那一天前後兩個觀測都不算，樣本少 2 筆，而不是多出一筆兩天的變動
+    mid = len(vix) - 20
+    holey = osx.iv_residual(vix[:mid] + vix[mid + 1:], tai, d, days=days)
+    # 缺一天：缺口兩側的兩個觀測都不成立，樣本少 2 筆；若誤把兩天變動當成一天，只會少 1 筆
+    assert holey["n"] + holey["dropped"] == full["n"] + full["dropped"] - 2
+    # 沒有交易日曆時，加權的日期仍能揭露缺口
+    assert osx.iv_residual(vix[:-2] + vix[-1:], tai, d) is None
+
+
+def test_snap_back_uses_previous_day_reconciliation_when_available():
+    vix, tai, days = _series()
+    n = len(vix)
+    spike = [(dd, x * 2.0 if i == n - 2 else x) for i, (dd, x) in enumerate(vix)]   # 昨天真的暴衝、今天回落
+    d = vix[-1][0]
+    stat_only = osx.iv_residual(spike, tai, d, days=days)                  # 沒有前一日行情：統計規則會標跳回日
+    assert stat_only["unreliable"] == "prev_vix_outlier"
+    real = osx.iv_residual(spike, tai, d, days=days, prev_suspect=False)  # 昨天官方值與自算值一致：是真行情
+    assert real["unreliable"] is None
+    glitch = osx.iv_residual(vix, tai, d, days=days, prev_suspect=True)   # 昨天官方值疑似異常：今天是跳回日
+    assert glitch["unreliable"] == "prev_vix_outlier"
+
+
+def test_rv20_needs_close_on_data_date():
+    vix, tai, days = _series()
+    d = tai[-1][0]
+    assert osx.realized_vol20(tai, d) is not None
+    assert osx.realized_vol20(tai[:-1], d) is None                 # 當日收盤缺漏：不拿前一日的 RV 當今天
+
+
+def test_iv30_interpolates_total_variance_and_flags_against_30_day_level():
+    d = dt.date(2026, 11, 26)
+    pts = [{"exp": "2026-12-02", "iv_atm": 61.11}, {"exp": "2026-12-16", "iv_atm": 55.35}, {"exp": "2027-01-20", "iv_atm": 47.76}]
+    v30 = osx.iv30(pts, d)
+    t1, t2, t30 = 20 / 365, 55 / 365, 30 / 365
+    w = 0.5535 ** 2 * t1 + (0.4776 ** 2 * t2 - 0.5535 ** 2 * t1) * (t30 - t1) / (t2 - t1)
+    assert v30 == pytest.approx(math.sqrt(w / t30) * 100, abs=1e-9) and 47.76 < v30 < 55.35
+    assert osx.iv30(pts[:1], d) == pytest.approx(61.11)            # 只有單邊：取最近的一個
+    assert osx.iv30([], d) is None and osx.iv30([{"exp": "2026-11-26", "iv_atm": 50}], d) is None
+    # 月選剩 5 天、次月低很多時，舊做法（只比月選）會誤標，30 天內插不會
+    near = [{"exp": "2026-12-03", "iv_atm": 80.0}, {"exp": "2027-01-20", "iv_atm": 50.0}]
+    chk = osx.vix_check(56.0, near, d)
+    assert chk["suspect"] is False and (56.0 / 80.0 - 1) * 100 < -25
+
+
+def test_pc_mismatch_is_not_published():
+    from pool import calendar as cal
+    from pool.util import NotYet, SourceError
+    out, d = build()
+    assert out["items"]["opt_struct"]["v"]["oi"]["pc_match"] is True
+
+    class DropRows(FixtureHttp):
+        """逐履約價檔少一列：合計偏低，和賣權買權比對不上。"""
+        def bytes(self, url, params=None, post=None):
+            raw = super().bytes(url, params, post)
+            if "optDataDown" in url and post["queryStartDate"] == "2026/11/20":
+                import gzip
+                lines = raw.decode("big5", "ignore").splitlines()
+                # 刪掉第一列「月選 202612、賣權、未平倉大於 0」的資料
+                hit = next(i for i, l in enumerate(lines) if len(f := l.split(",")) > 17 and f[2].strip() == "202612"
+                           and f[4] == "賣權" and f[17] == "一般" and f[11].isdigit() and int(f[11]) > 0)
+                return "\r\n".join(lines[:hit] + lines[hit + 1:]).encode("big5")
+            return raw
+    late = runmod.run(DropRows(), Store(tempfile.mkdtemp()), NOW, trigger="test")
+    assert late["items"]["opt_struct"]["status"] == "missing"
+    assert any("不符" in n for n in late["items"]["opt_struct"].get("notes", []))     # 確認是因為口數不符
+    early = runmod.run(DropRows(), Store(tempfile.mkdtemp()), cal.parse_now("2026-11-20T16:20:00"), trigger="test")
+    assert early["items"]["opt_struct"]["status"] == "pending"

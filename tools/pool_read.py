@@ -368,7 +368,7 @@ def main(argv=None, http=None) -> int:
     chk = (((out_items.get("opt_struct") or {}).get("v") or {}).get("vol") or {}).get("vix_check") or {}
     if chk.get("suspect"):
         # 官方 VIX 偶有單日跳動（2026-11-24）。用它推的一日 1σ 會跟著失真，提醒報告改用實際波動版
-        notes.append(f"台指 VIX 疑似異常：官方值與資料池自算的月選價平隱含波動率（{chk['iv_month']}%）相差 {chk['diff_pct']:+}%，"
+        notes.append(f"台指 VIX 疑似異常：官方值與資料池自算的 30 天價平隱含波動率（{chk.get('iv30', chk.get('iv_month'))}%）相差 {chk['diff_pct']:+}%，"
                      "一日 1σ 請改用 sigma1_rv_pts")
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
     if "bad" in health:

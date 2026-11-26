@@ -81,6 +81,13 @@ def _opt_struct(ctx):
     pc = ctx.items.get("pc_ratio") or {}
     if pc.get("status") in ("ok", "conflict") and pc.get("asof") == iso(D):
         v["oi"]["pc_match"] = (pc["v"].get("put_oi") == v["oi"]["put_oi"] and pc["v"].get("call_oi") == v["oi"]["call_oi"])
+        if not v["oi"]["pc_match"]:
+            # 逐履約價檔缺列時合計會偏低：不發布（Codex #9 指正 7）。17:30 前等下一個時段，之後標 missing
+            why = (f"未平倉合計（賣權 {v['oi']['put_oi']}、買權 {v['oi']['call_oi']}）與賣權買權比口數"
+                   f"（{pc['v'].get('put_oi')}、{pc['v'].get('call_oi')}）不符")
+            if early:
+                raise NotYet(why)
+            raise SourceError(why)
     return v, D
 
 
