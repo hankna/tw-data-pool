@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-26T06:02:08+08:00",
- "snapshot_id": "d6be5dcb",
+ "generated_at": "2026-11-26T09:05:29+08:00",
+ "snapshot_id": "6be455d9",
  "calendar": {
   "tw_last": "2026-11-25",
   "tw_prev": "2026-11-24",
@@ -267,16 +267,63 @@
    }
   },
   "us_index": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "^GSPC": {
+     "close": 7182.78,
+     "chg_pct": -0.25
+    },
+    "^IXIC": {
+     "close": 23585.8,
+     "chg_pct": -0.62
+    },
+    "^DJI": {
+     "close": 50182.95,
+     "chg_pct": 0.33
+    },
+    "^SOX": {
+     "close": 8774.86,
+     "chg_pct": -0.65
+    }
+   }
   },
   "us_stock": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "NVDA": {
+     "close": 149.3,
+     "chg_pct": -3.91
+    },
+    "TSM": {
+     "close": 342.34,
+     "chg_pct": -1.96
+    },
+    "AMD": {
+     "close": 406.03,
+     "chg_pct": -1.75
+    },
+    "AVGO": {
+     "close": 300.86,
+     "chg_pct": -0.07
+    },
+    "MU": {
+     "close": 601.25,
+     "chg_pct": -4.53
+    }
+   }
   },
   "us_vix": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "close": 28.29,
+    "chg": 1.93
+   }
   },
   "us_yield": {
    "status": "pending",
