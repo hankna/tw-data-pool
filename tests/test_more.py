@@ -145,14 +145,15 @@ def test_pool_read_src_zh_and_history():
 _OFF = {"FinMind", "twse.com.tw", "taifex.com.tw", "openapi.taifex.com.tw", "rate.bot.com.tw"}
 
 
-def _next_day(daily_margin=None, daily_raw=None, generated="2026-11-23T17:32:00+08:00", now="2026-11-23T18:23:00"):
+def _next_day(daily_margin=None, daily_raw=None, generated="2026-11-23T17:32:00+08:00", now="2026-11-23T18:23:00",
+              latest_margin=None):
     """模擬 11/23（週一）：latest 的 margin 已改成今日 pending，前一交易日 11/20 的值只在 daily 留存。"""
     out, d = build()
     root = Path(d)
     lt = json.loads((root / "latest" / "digest.json").read_text("utf-8"))
     prev = lt["items"]["margin"]
     assert prev["status"] == "ok" and prev["asof"] == "2026-11-20"
-    lt["items"]["margin"] = {"status": "pending", "asof": None}
+    lt["items"]["margin"] = latest_margin or {"status": "pending", "asof": None}
     lt["generated_at"] = generated
     (root / "latest" / "digest.json").write_text(json.dumps(lt, ensure_ascii=False), "utf-8")
     dp = root / "daily" / "2026-11-20" / "digest.json"
@@ -186,10 +187,19 @@ def test_pool_read_allow_prev_reads_previous_daily_digest():
     {"status": "ok", "asof": "2026-11-23", "v": {"balance_bn": 1}},     # 錯位到目標日之後
     {"status": "ok", "asof": 20261120, "v": {"balance_bn": 1}},         # 型別不符
     ["not", "a", "dict"],
+    {"status": "ok", "asof": "2026-11-20", "src": ["TWSE"], "v": {"balance_bn": 1}},   # src 型別不符
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN"},                     # 缺 v
 ])
 def test_pool_read_allow_prev_rejects_bad_daily_entry(bad):
     _, r = _next_day(daily_margin=bad)
     assert "margin" in r["read"]["missing"] and r["items"]["margin"]["via"] == "none"
+
+
+def test_pool_read_allow_prev_misdated_latest_falls_to_daily():
+    # latest 有已完成但資料日錯位的值：不能採用，要改用 daily 的前一交易日值
+    prev, r = _next_day(latest_margin={"status": "ok", "asof": "2026-11-19", "src": "TWSE:MI_MARGN",
+                                       "v": {"balance_bn": 9999}})
+    assert r["items"]["margin"]["asof"] == "2026-11-20" and r["items"]["margin"]["v"] == prev["v"]
 
 
 @pytest.mark.parametrize("raw", ["DELETE", "{not json", "[1, 2]"])

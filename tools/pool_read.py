@@ -36,7 +36,8 @@ def _sh(cmd, cwd=None, timeout=60):
 
 def _prev_ok(e, tw_prev: str):
     """前一交易日的有效值：結構正確、狀態完成、資料日剛好是前一交易日；否則回傳 None。"""
-    if isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("asof"), str) and e["asof"] == tw_prev:
+    if (isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("asof"), str) and e["asof"] == tw_prev
+            and isinstance(e.get("src"), str) and isinstance(e.get("v"), dict) and e["v"]):
         return e
     return None
 
@@ -320,7 +321,7 @@ def main(argv=None, http=None) -> int:
                            f"目前資料已齊）"] + list(health.get("notes") or [])
     if late:
         health["alert"] = True
-        health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍靠讀穿或缺，"
+        health["notes"] = [f"資料池未按時更新（{'、'.join(late)} 已過預計公布時間 {LATE_MIN} 分鐘仍未取得目標資料日的資料池值，"
                            f"資料池在預計公布後 {LATE_MIN} 分鐘內沒有執行紀錄），最後執行於 "
                            f"{last_run.isoformat(timespec='minutes') if last_run else '無紀錄'}"] + list(health.get("notes") or [])
     result = {
