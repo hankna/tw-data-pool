@@ -95,7 +95,9 @@ def atm_iv(ch: dict, F: float, tau: float):
     if not both:
         return None, None
     k0 = min(both, key=lambda k: (abs(k - F), k))
-    ivs = [x for x in (implied_vol(ch[k0]["call"], F, k0, tau, "call"), implied_vol(ch[k0]["put"], F, k0, tau, "put")) if x]
+    # 每一邊先過 3%～400% 的界限再平均，避免 1% 與 5% 平均成「有效」的 3%（Codex #9 指正 1）
+    ivs = [x for x in (implied_vol(ch[k0]["call"], F, k0, tau, "call"), implied_vol(ch[k0]["put"], F, k0, tau, "put"))
+           if x is not None and IV_MIN <= x <= IV_MAX]
     return (sum(ivs) / len(ivs) if ivs else None), k0
 
 
@@ -109,7 +111,7 @@ def _iv_at_delta(ch: dict, F: float, tau: float, cp: str, target: float = 0.25):
         if p is None or p < MIN_PRICE_RR:
             continue
         sig = implied_vol(p, F, k, tau, cp)
-        if sig:
+        if sig is not None and IV_MIN <= sig <= IV_MAX:      # 個別履約價也過界限再內插（Codex #9 指正 2）
             pts.append((abs(delta(F, k, tau, sig, cp)), sig))
     pts.sort()
     for (d0, s0), (d1, s1) in zip(pts, pts[1:]):
@@ -246,25 +248,56 @@ def _robust_keep(ys):
     return med, 1.4826 * statistics.median(abs(y - med) for y in ys)
 
 
-def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int = RESID_MIN):
+def _trading_set(vix_rows, taiex_rows, days):
+    """判斷「相鄰交易日」用的交易日集合。日曆涵蓋的期間用交易日曆；更早的期間用 VIX 日期 ∪ 加權日期。
+    任一來源缺某天，該天仍在集合裡，缺漏前後兩天就不會被當成相鄰（Codex #9 指正 3）。"""
+    # 日曆涵蓋不到的期間：加權指數只在交易日公布，日期一律採用；VIX 只採平日的日期，
+    # 週末的錯誤紀錄不算交易日，不會把週五與週一拆開（Codex #10 第 2 回合指正 1）
+    src = {r[0] for r in taiex_rows} | {r[0] for r in vix_rows if _weekday(r[0])}
+    cal = sorted(iso(x) for x in (days or []))
+    if not cal:
+        return sorted(src)
+    # 交易日曆涵蓋的期間以日曆為準：來源多出的週末或休市日紀錄不算交易日，不會把真正相鄰的兩天拆開
+    # （Codex #10 指正 2）；日曆涵蓋不到的較早期間，才用來源日期補
+    lo, hi = cal[0], cal[-1]
+    return sorted(set(cal) | {x for x in src if x < lo or x > hi})
+
+
+def _weekday(x: str) -> bool:
+    """週一到週五為 True；無法解析的日期字串視為非交易日。"""
+    try:
+        return dt.date.fromisoformat(x).weekday() < 5
+    except (TypeError, ValueError):
+        return False
+
+
+def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int = RESID_MIN, days=None,
+                prev_suspect=None):
     """台指 VIX 當日變動扣掉「指數漲跌能解釋的部分」之後的殘差。
-    作法：y＝100×ln(VIX_t÷VIX_{t−1})，x＝加權指數當日報酬 %；用 d 之前 win 個交易日做最小平方法（不含 d，防前視），
-    殘差＝y_d −（a＋b×x_d），z＝殘差÷視窗內殘差標準差。負值＝波動率跌得比指數漲跌能解釋的多。
+    作法：y＝100×ln(VIX_t÷VIX_{t−1})，x＝加權指數當日報酬 %；只用「相鄰交易日」兩端都有值的觀測（缺一天就跳過，
+    不把兩天的變動當一天）；用 d 之前最近 win 個交易日內的觀測做最小平方法（不含 d，防前視；缺值日占名額、不往前補），殘差＝y_d −（a＋b×x_d），
+    z＝殘差÷視窗內殘差標準差。殘差只表示 VIX 實際變動比指數漲跌推算的變動高或低，不代表 VIX 本身漲跌，也不代表誰在買賣。
     官方 VIX 偶有單日跳動（2026-11-24 公布 26.18，前後兩日為 55.36、58.38）：視窗內 y 偏離中位數超過
-    RESID_MAD_K 個穩健標準差的日子不進迴歸（dropped 記錄剔除幾天）。前一交易日被剔除、當日又反向大幅變動時，
-    當日變動多半只是指數跳回來，標 unreliable＝'prev_vix_outlier'，報告不判讀。"""
+    RESID_MAD_K 個穩健標準差的日子不進迴歸（dropped 記錄剔除幾天）。
+    跳回日：prev_suspect 由呼叫端用前一交易日的官方 VIX 對照當日自算 30 天隱含波動率判定（Codex #9 指正 4），
+    前一日官方值與自算值一致時，真實的急升後回落不會被標成不可靠。沒有前一日行情（prev_suspect 為 None）時，
+    才退回統計規則：前一日與當日都偏離超過門檻、方向相反。"""
     v = {r[0]: float(r[1]) for r in vix_rows if r[1] not in (None, "")}
     c = {r[0]: float(r[1]) for r in taiex_rows if r[1] not in (None, "")}
-    dates = sorted(x for x in set(v) & set(c) if x <= d)
-    if len(dates) < min_n + 2 or dates[-1] != d:
+    if d not in v or d not in c:
         return None
+    T = [x for x in _trading_set(vix_rows, taiex_rows, days) if x <= d]
     obs = []
-    for a, b in zip(dates, dates[1:]):
-        if v[a] > 0 and v[b] > 0 and c[a] > 0:
+    for a, b in zip(T, T[1:]):                       # 只配對交易日曆上相鄰的兩天
+        if a in v and b in v and a in c and b in c and v[a] > 0 and v[b] > 0 and c[a] > 0:
             obs.append((b, (c[b] / c[a] - 1) * 100, 100 * math.log(v[b] / v[a])))
     if not obs or obs[-1][0] != d:
-        return None
-    today, raw = obs[-1], obs[:-1][-win:]
+        return None                                  # 前一交易日缺 VIX 或加權：當日沒有可比的基準
+    # 視窗是 d 之前最近 win 個「交易日」，不是最近 win 筆有效觀測：缺值的日子占掉視窗名額，
+    # 不往更早的資料補，有效觀測不足 min_n 就不發布（Codex #10 第 2 回合指正 2）
+    i = T.index(d)
+    win_days = set(T[max(0, i - win):i])
+    today, raw = obs[-1], [o for o in obs[:-1] if o[0] in win_days]
     if len(raw) < min_n:
         return None
     med, rsd = _robust_keep([o[2] for o in raw])
@@ -284,8 +317,13 @@ def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int =
         return None
     exp_pct = alpha + beta * today[1]
     resid = today[2] - exp_pct
-    prev_v = v[dates[-2]]
-    snap_back = out_of(raw[-1][2]) and out_of(today[2]) and (raw[-1][2] - med) * (today[2] - med) < 0
+    prev_d = T[T.index(d) - 1]
+    prev_v = v[prev_d]
+    if prev_suspect is None:
+        snap_back = (raw[-1][0] == prev_d and out_of(raw[-1][2]) and out_of(today[2])
+                     and (raw[-1][2] - med) * (today[2] - med) < 0)
+    else:
+        snap_back = bool(prev_suspect)
     return {"n": len(hist), "dropped": len(raw) - len(hist), "beta": rnd(beta, 3), "ret_pct": rnd(today[1]),
             "vix_chg_pct": rnd(today[2]), "expected_pct": rnd(exp_pct), "resid_pct": rnd(resid),
             "resid_pts": rnd(prev_v * (math.exp(today[2] / 100) - math.exp(exp_pct / 100))), "z": rnd(resid / sd),
@@ -293,11 +331,57 @@ def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int =
 
 
 def realized_vol20(taiex_rows, d: str):
-    cl = [float(r[1]) for r in sorted(taiex_rows) if r[0] <= d and r[1] not in (None, "")]
-    if len(cl) < 21:
+    rows = [r for r in sorted(taiex_rows) if r[0] <= d and r[1] not in (None, "")]
+    if len(rows) < 21 or rows[-1][0] != d:          # 當日收盤缺漏就不算，不拿前一日的值當今天（Codex #9 指正 5）
         return None
+    cl = [float(r[1]) for r in rows]
     c = cl[-21:]
     return statistics.stdev([(c[i] / c[i - 1] - 1) * 100 for i in range(1, 21)]) * math.sqrt(252)
+
+
+def iv30(points, d: dt.date):
+    """30 個日曆天的價平隱含波動率：以總變異數 σ²τ 對 τ 線性內插（台指 VIX 也是 30 天期），
+    points＝[{'exp','iv_atm'}]；只有單邊時取最近的一個。用來和官方 VIX 對帳，避免月選剩 5 天或換月後期限差太多，
+    把正常的 VIX 誤標成疑似異常（Codex #9 指正 6）。"""
+    pts = []
+    for p in points:
+        if p and p.get("iv_atm") is not None and p.get("exp"):
+            days_ = (dt.date.fromisoformat(p["exp"]) - d).days
+            if days_ > 0:
+                pts.append((days_ / 365.0, p["iv_atm"] / 100.0))
+    if not pts:
+        return None
+    pts = sorted(set(pts))
+    t30 = 30 / 365.0
+    lo = [q for q in pts if q[0] <= t30]
+    hi = [q for q in pts if q[0] >= t30]
+    if lo and hi:
+        (t1, s1), (t2, s2) = lo[-1], hi[0]
+        if t2 == t1:
+            return s1 * 100
+        w = s1 * s1 * t1 + (s2 * s2 * t2 - s1 * s1 * t1) * (t30 - t1) / (t2 - t1)
+        return math.sqrt(max(w, 0.0) / t30) * 100
+    return (lo[-1] if lo else hi[0])[1] * 100
+
+
+def _day_points(rows, d: dt.date, days) -> list:
+    pk = pick_series(rows, d, days)
+    out = []
+    for role in ("front", "month", "next"):
+        c = pk[role]
+        p = series_point(rows, c, d, pk["_exp"][c], pk["_td"][c]) if c else None
+        if p:
+            out.append({"exp": p["exp"], "iv_atm": p["iv_atm"]})
+    return out
+
+
+def vix_check(vx, points, d: dt.date):
+    """官方 VIX 對照自算 30 天價平隱含波動率；相差超過 VIX_SUSPECT_PCT 標 suspect。"""
+    own = iv30(points, d)
+    if vx is None or own is None or own <= 0:
+        return None
+    diff = (vx / own - 1) * 100
+    return {"iv30": rnd(own), "diff_pct": rnd(diff), "suspect": abs(diff) > VIX_SUSPECT_PCT}
 
 
 # ---------- 組裝 ----------
@@ -320,15 +404,19 @@ def calc(cur, prev, inst_rows, d: dt.date, prev_day, days, vix_rows, taiex_rows)
     vx = next((float(r[1]) for r in vix_rows if r[0] == ds and r[1] not in (None, "")), None)
     rv = realized_vol20(taiex_rows, ds)
     vol["vix"], vol["rv20"] = vx, rnd(rv)
-    # 官方 VIX 與自算月選價平隱含波動率互相檢查：差太多時 VIX 相關的兩個數字（vrp、殘差）不可靠
-    chk = None
-    if vx is not None and m:
-        diff = (vx / m["iv_atm"] - 1) * 100
-        chk = {"iv_month": m["iv_atm"], "diff_pct": rnd(diff), "suspect": abs(diff) > VIX_SUSPECT_PCT}
+    # 官方 VIX 與自算 30 天價平隱含波動率互相檢查：差太多時 VIX 相關的兩個數字（vrp、殘差）不可靠
+    chk = vix_check(vx, [p for p in (f, m, n) if p], d)
     vol["vix_check"] = chk
     bad = bool(chk and chk["suspect"])
     vol["vrp"] = rnd(vx - rv) if vx is not None and rv is not None and not bad else None
-    res = iv_residual(vix_rows, taiex_rows, ds)
+    # 前一交易日的官方 VIX 是否也疑似異常（用前一日行情自算），決定今天是不是「跳回日」
+    prev_suspect = None
+    if prev and prev_day:
+        pds = iso(prev_day)
+        pvx = next((float(r[1]) for r in vix_rows if r[0] == pds and r[1] not in (None, "")), None)
+        pchk = vix_check(pvx, _day_points(prev, prev_day, days), prev_day)
+        prev_suspect = pchk["suspect"] if pchk else None
+    res = iv_residual(vix_rows, taiex_rows, ds, days=days, prev_suspect=prev_suspect)
     if res and bad:
         res["unreliable"] = "vix_suspect"
     vol["iv_resid"] = res
