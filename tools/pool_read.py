@@ -206,10 +206,20 @@ def main(argv=None, http=None) -> int:
             out_items[name] = {**e, "via": "pool"}
             ctx.items[name] = e
             continue
-        if (name in prof.get("allow_prev", []) and e and e.get("status") in DONE and not stale
-                and (e.get("asof") or "") >= cal["tw_prev"]):
-            out_items[name] = {**e, "via": "pool", "note": "資料日早於目標日（此項目允許前一日）"}
-            continue
+        if name in prof.get("allow_prev", []) and not stale:
+            # latest 在新交易日開盤後就把今日改成 pending，前一日的值只留在 daily/{前一交易日}/digest.json
+            prev = e if (e and e.get("status") in DONE and (e.get("asof") or "") >= cal["tw_prev"]) else None
+            if prev is None:
+                try:
+                    pe = json.loads(read_data_file(f"daily/{cal['tw_prev']}/digest.json", a.data_dir)
+                                    .decode("utf-8")).get("items", {}).get(name)
+                except Exception:  # noqa: BLE001
+                    pe = None
+                if pe and pe.get("status") in DONE and (pe.get("asof") or "") >= cal["tw_prev"]:
+                    prev = pe
+            if prev:
+                out_items[name] = {**prev, "via": "pool", "note": "資料日早於目標日（此項目允許前一日）"}
+                continue
         if a.no_direct:
             out_items[name] = e or {"status": "missing", "asof": None}
             missing.append(name)

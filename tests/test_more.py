@@ -138,3 +138,33 @@ def test_pool_read_src_zh_and_history():
     assert r["items"]["inst_spot"]["src_zh"].startswith("證交所")
     assert r["items"]["vix"]["src_zh"].startswith("期交所")
     assert len(r["taiex_hist"]) >= 21 and r["taiex_hist"][-1][0] == "2026-11-20"
+
+
+def test_pool_read_allow_prev_reads_previous_daily_digest():
+    # 新交易日 14:12 後 latest 的 margin 已改成今日 pending；18:23 盤後總覽要能拿前一交易日的留存值
+    import shutil
+    out, d = build()
+    root = Path(d)
+    assert (root / "daily" / "2026-11-20" / "digest.json").exists()
+    lt = json.loads((root / "latest" / "digest.json").read_text("utf-8"))
+    prev_margin = lt["items"]["margin"]
+    assert prev_margin["status"] == "ok" and prev_margin["asof"] == "2026-11-20"
+    lt["items"]["margin"] = {"status": "pending", "asof": None}
+    lt["generated_at"] = "2026-11-23T17:32:00+08:00"      # 新的一天資料池仍準時在跑
+    (root / "latest" / "digest.json").write_text(json.dumps(lt, ensure_ascii=False), "utf-8")
+    f = tempfile.mktemp()
+    pool_read.main(["--profile", "panhou", "--date", "2026-11-23", "--out", f, "--data-dir", d,
+                    "--now", "2026-11-23T18:23:00"], http=FixtureHttp(off={"FinMind", "twse.com.tw", "taifex.com.tw",
+                                                                         "openapi.taifex.com.tw", "rate.bot.com.tw"}))
+    r = json.loads(Path(f).read_text("utf-8"))
+    m = r["items"]["margin"]
+    assert m["via"] == "pool" and m["asof"] == "2026-11-20" and "允許前一日" in m["note"]
+    assert m["v"] == prev_margin["v"] and "margin" not in r["read"]["missing"]
+    # 前一交易日的留存也不是 ok：照舊列為缺，不拿更舊的資料
+    dd = json.loads((root / "daily" / "2026-11-20" / "digest.json").read_text("utf-8"))
+    dd["items"]["margin"] = {"status": "pending", "asof": None}
+    (root / "daily" / "2026-11-20" / "digest.json").write_text(json.dumps(dd, ensure_ascii=False), "utf-8")
+    pool_read.main(["--profile", "panhou", "--date", "2026-11-23", "--out", f, "--data-dir", d,
+                    "--now", "2026-11-23T18:23:00"], http=FixtureHttp(off={"FinMind", "twse.com.tw", "taifex.com.tw",
+                                                                         "openapi.taifex.com.tw", "rate.bot.com.tw"}))
+    assert "margin" in json.loads(Path(f).read_text("utf-8"))["read"]["missing"]
