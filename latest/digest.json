@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-27T00:52:06+08:00",
- "snapshot_id": "8ba0a840",
+ "generated_at": "2026-11-27T05:12:07+08:00",
+ "snapshot_id": "be42aa3a",
  "calendar": {
   "tw_last": "2026-11-26",
   "tw_prev": "2026-11-25",
@@ -20,9 +20,10 @@
     "close": 39151.81,
     "chg": 956.38,
     "chg_pct": 2.5,
-    "turnover_bn": 8376.53
+    "turnover_bn": 8453.37
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 1
   },
   "tpex": {
    "asof": "2026-11-26",
@@ -39,13 +40,14 @@
    "src": "TWSE:BFI82U",
    "v": {
     "foreign_bn": -491.81,
-    "trust_bn": 230.51,
+    "trust_bn": 212.13,
     "dealer_bn": 128.65,
     "dealer_self_bn": 40.03,
     "dealer_hedge_bn": 88.62,
-    "total_bn": -132.65
+    "total_bn": -151.03
    },
-   "xcheck": "n/a"
+   "xcheck": "match",
+   "rev": 1
   },
   "fut_inst": {
    "asof": "2026-11-26",
@@ -65,7 +67,8 @@
      "chg": -1759
     }
    },
-   "xcheck": "n/a"
+   "xcheck": "n/a",
+   "rev": 0
   },
   "opt_inst": {
    "asof": "2026-11-26",
@@ -172,7 +175,8 @@
      "put": 73367
     }
    },
-   "xcheck": "n/a"
+   "xcheck": "n/a",
+   "rev": 0
   },
   "pc_ratio": {
    "asof": "2026-11-26",
@@ -183,7 +187,8 @@
     "vol_pct": null,
     "put_oi": 73367,
     "call_oi": 139680
-   }
+   },
+   "rev": 0
   },
   "large_traders": {
    "asof": "2026-11-26",
@@ -214,7 +219,8 @@
     "close": 55.18,
     "close_1min_avg": 55.18,
     "chg": -3.2
-   }
+   },
+   "rev": 0
   },
   "opt_struct": {
    "asof": "2026-11-26",
@@ -436,7 +442,8 @@
     "short_balance": 173621,
     "short_chg": 4256
    },
-   "xcheck": "match"
+   "xcheck": "match",
+   "rev": 0
   },
   "usd_twd": {
    "asof": "2026-11-26",
@@ -450,20 +457,20 @@
    "label": "臺灣銀行牌告即期匯率"
   },
   "tx_night": {
-   "asof": "2026-11-26",
+   "asof": "2026-11-27",
    "status": "ok",
    "src": "TAIFEX:futDataDown",
    "v": {
-    "trading_date": "2026-11-26",
-    "session": "11/25 15:00～11/26 05:00",
+    "trading_date": "2026-11-27",
+    "session": "11/26 15:00～11/27 05:00",
     "contract": "202612",
-    "open": 37868.0,
-    "high": 38397.0,
-    "low": 35933.0,
-    "close": 38397.0,
-    "chg": 274.0,
-    "chg_pct": 0.72,
-    "volume": 79451
+    "open": 39250.0,
+    "high": 39559.0,
+    "low": 39008.0,
+    "close": 39492.0,
+    "chg": 0.0,
+    "chg_pct": 0.0,
+    "volume": 25940
    }
   },
   "us_index": {
@@ -577,6 +584,9 @@
   "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": []
+  "notes": [
+   "taiex 修訂（rev 1）",
+   "inst_spot 修訂（rev 1）"
+  ]
  }
 }
