@@ -148,6 +148,60 @@ def test_iv_residual_has_no_lookahead_and_needs_history():
     assert osx.iv_residual(vix[:-1], tai, d) is None                        # 當日沒有 VIX
 
 
+def _with_glitch(vix, at):
+    """把第 at 個交易日的 VIX 砍半（隔天恢復），模擬 2026-11-24 官方指數的單日跳動。"""
+    return [(d, x * 0.5 if i == at else x) for i, (d, x) in enumerate(vix)]
+
+
+def test_iv_residual_ignores_official_vix_glitch_in_history():
+    vix, tai = _vix_taiex()
+    d = vix[-1][0]
+    clean, hit = osx.iv_residual(vix, tai, d), osx.iv_residual(_with_glitch(vix, len(vix) - 6), tai, d)
+    # 砍半與跳回來兩天都被剔除，迴歸係數與當日殘差幾乎不變
+    assert clean["dropped"] == 0 and hit["dropped"] == 2 and hit["n"] == 58
+    assert hit["beta"] == pytest.approx(clean["beta"], abs=0.25) and hit["z"] == pytest.approx(clean["z"], abs=0.4)
+    assert hit["unreliable"] is None
+
+
+def test_iv_residual_flags_snap_back_day_and_day_after_is_usable():
+    vix, tai = _vix_taiex()
+    n = len(vix)
+    snap = osx.iv_residual(_with_glitch(vix, n - 2), tai, vix[-1][0])            # 昨天砍半、今天跳回來
+    assert snap["unreliable"] == "prev_vix_outlier" and snap["z"] > 5
+    after = osx.iv_residual(_with_glitch(vix, n - 3), tai, vix[-1][0])           # 前天砍半、昨天跳回來
+    assert after["unreliable"] is None and after["dropped"] == 2
+
+
+def test_real_shock_today_is_not_flagged():
+    r = osx.iv_residual(*_vix_taiex(shock=45.0), _vix_taiex()[0][-1][0])        # 前一日正常，今天波動率暴衝
+    assert r["unreliable"] is None and r["z"] > 5
+
+
+def test_calc_flags_official_vix_far_from_own_month_iv():
+    days = [D + dt.timedelta(days=i) for i in range(0, 80) if (D + dt.timedelta(days=i)).weekday() < 5]
+    rows = _rows([("202612", dt.date(2026, 12, 16)), ("202701", dt.date(2027, 1, 20))])      # 自算月選約 50%
+    base = {(w, cp): (10, 4, 100, 60) for w in osx.PLAYERS for cp in ("call", "put")}
+    vix, tai = _vix_taiex()
+    shift = lambda xs, last: [(("2026-11-20" if i == len(xs) - 1 else d), (last if i == len(xs) - 1 and last else x))  # noqa: E731
+                              for i, (d, x) in enumerate(xs)]
+    ok = osx.calc(rows, None, _inst("2026-11-20", base), D, None, days, shift(vix, 52.0), shift(tai, None))
+    bad = osx.calc(rows, None, _inst("2026-11-20", base), D, None, days, shift(vix, 26.0), shift(tai, None))
+    assert ok["vol"]["vix_check"]["suspect"] is False and ok["vol"]["vrp"] is not None
+    assert bad["vol"]["vix_check"]["suspect"] is True and bad["vol"]["vix_check"]["diff_pct"] < -25
+    assert bad["vol"]["vrp"] is None and bad["vol"]["iv_resid"]["unreliable"] == "vix_suspect"
+    row = osx.series_row("2026-11-20", bad)
+    assert row["resid_z"] is None and row["vix_diff_pct"] == bad["vol"]["vix_check"]["diff_pct"]   # 不可靠的殘差不進帳本
+    assert osx.series_row("2026-11-20", ok)["resid_z"] == ok["vol"]["iv_resid"]["z"]
+
+
+def test_implausible_iv_is_dropped():
+    exp = dt.date(2026, 12, 16)
+    rows = _rows([("202612", exp)])
+    for r in rows:                      # 結算價被灌成接近履約價：反推出的波動率超過 400%
+        r["settle"] = r["strike"] * 0.95 if r["cp"] == "put" else 40000 * 0.95
+    assert osx.series_point(rows, "202612", D, exp, 18) is None
+
+
 # ---------- 接線（2026-11-20 真實樣本；當日 202611F3 到期） ----------
 def test_wired_item_matches_official_put_call_oi():
     out, d = build()
@@ -157,6 +211,8 @@ def test_wired_item_matches_official_put_call_oi():
     # 未到期契約的未平倉合計，必須等於期交所公布的賣權買權比口數（當日到期的 F3 已排除）
     assert (v["oi"]["put_oi"], v["oi"]["call_oi"]) == (pc["put_oi"], pc["call_oi"]) and v["oi"]["pc_match"] is True
     assert v["oi"]["put_chg"] is not None and "202611F3" not in v["oi"]["added"]
+    assert v["oi"]["expiring_today"] == ["202611F3"]
+    assert v["vol"]["vix_check"]["suspect"] is False and abs(v["vol"]["vix_check"]["diff_pct"]) < 10
     vol = v["vol"]
     assert vol["front"]["contract"] != "202611F3" and vol["front"]["td"] >= 2
     assert vol["month"]["contract"] == "202612" and vol["next"]["contract"] == "202701"
@@ -184,6 +240,22 @@ def test_missing_previous_day_keeps_item_with_empty_changes():
     out = runmod.run(NoPrev(), Store(tempfile.mkdtemp()), NOW, trigger="test")
     e = out["items"]["opt_struct"]
     assert e["status"] == "ok" and e["v"]["oi"]["put_chg"] is None and e["v"]["oi"]["put_oi"] > 0
+
+
+def test_before_1730_waits_for_next_slot_instead_of_locking_partial_result():
+    from pool import calendar as cal
+    from pool.util import SourceError
+
+    class NoPrev(FixtureHttp):
+        def bytes(self, url, params=None, post=None):
+            if "optDataDown" in url and post["queryStartDate"] == "2026/11/19":
+                raise SourceError("模擬前一日行情暫時取不到")
+            return super().bytes(url, params, post)
+    d = tempfile.mkdtemp()
+    early = runmod.run(NoPrev(), Store(d), cal.parse_now("2026-11-20T16:20:00"), trigger="test")
+    assert early["items"]["opt_struct"]["status"] == "pending"                     # 16:17 時段：不定案，等 17:32
+    later = runmod.run(FixtureHttp(), Store(d), cal.parse_now("2026-11-20T17:35:00"), trigger="test")
+    assert later["items"]["opt_struct"]["status"] == "ok" and later["items"]["opt_struct"]["v"]["oi"]["put_chg"] is not None
 
 
 def test_source_down_is_not_an_alert():

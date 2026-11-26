@@ -60,13 +60,22 @@ def _closes(ctx, D):
 def _opt_struct(ctx):
     """選擇權籌碼與波動結構：當日與前一交易日的逐履約價行情＋三大法人買賣權分計＋台指 VIX 與加權歷史。"""
     D, P = ctx.d("tw_last"), ctx.d("tw_prev")
+    # 項目一旦標 ok 當天就不再重算，所以資料日當天 17:30 以前寧可等下一個時段，也不把缺一塊的結果定下來；
+    # 17:30 之後（含盤後總覽的讀穿）才接受不完整的結果
+    now = ctx.now if ctx.now.tzinfo else ctx.now.replace(tzinfo=cal_mod.TZ)
+    early = now < dt.datetime.combine(D, dt.time(17, 30), cal_mod.TZ)
     cur = taifex.opt_chain(ctx, D)
     try:
         prev = taifex.opt_chain(ctx, P)
     except (NotYet, SourceError):
+        if early:
+            raise NotYet("前一交易日選擇權行情暫時取不到，下一個時段再試") from None
         prev = None           # 取不到前一日：未平倉增減為空，其餘照算
     inst = taifex.opt_inst_range(ctx, P, D)
-    v = optstruct.calc(cur, prev, inst, D, P, ctx.days, taifex.vix_history(ctx, D), _closes(ctx, D))
+    vix_rows = taifex.vix_history(ctx, D)
+    if early and not any(r[0] == iso(D) for r in vix_rows):
+        raise NotYet("台指 VIX 當日值尚未取得，下一個時段再試")
+    v = optstruct.calc(cur, prev, inst, D, P, ctx.days, vix_rows, _closes(ctx, D))
     if v["flow"] is None:
         raise NotYet("選擇權法人買賣權分計不完整")
     pc = ctx.items.get("pc_ratio") or {}

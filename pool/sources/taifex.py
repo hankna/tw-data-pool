@@ -188,8 +188,11 @@ def opt_inst_range(ctx, d0, d1):
     out = []
     for r in csv.reader(io.StringIO(raw.decode("big5", "ignore"))):
         if len(r) > 12 and r[1].strip() == "臺指選擇權" and r[3].strip() in _WHO and r[2].strip().upper() in ("CALL", "PUT"):
+            vals = [num(r[i]) for i in (4, 6, 10, 12)]
+            if any(x is None for x in vals):
+                raise SourceError("期交所選擇權法人買賣權分計有空白欄位")
             out.append({"date": r[0].strip().replace("/", "-"), "cp": r[2].strip().lower(), "who": _WHO[r[3].strip()],
-                        "buy": _i(r[4]), "sell": _i(r[6]), "long_oi": _i(r[10]), "short_oi": _i(r[12])})
+                        "buy": int(vals[0]), "sell": int(vals[1]), "long_oi": int(vals[2]), "short_oi": int(vals[3])})
     if not any(x["date"] == iso(d1) for x in out):
         raise NotYet(f"期交所選擇權法人買賣權分計尚無 {iso(d1)}")
     return out

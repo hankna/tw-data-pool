@@ -21,6 +21,9 @@ MIN_PRICE_RR = 1.0      # 風險逆轉：結算價低於 1 點的履約價跳動
 PARITY_N, PARITY_MIN = 5, 3
 FRONT_MIN_TD, MONTH_MIN_TD = 2, 5   # 最近到期序列至少還有 2 個交易日；月選至少 5 個交易日
 RESID_WIN, RESID_MIN = 60, 30
+RESID_MAD_K = 5.0        # 迴歸樣本：VIX 當日變動偏離中位數超過 5 個穩健標準差的日子不納入（官方指數偶有跳動）
+VIX_SUSPECT_PCT = 25.0   # 官方台指 VIX 與自算月選價平隱含波動率相差超過 25% 視為疑似異常
+IV_MIN, IV_MAX = 0.03, 4.0   # 反推出的隱含波動率超出 3%～400% 視為無效
 
 
 # ---------- 定價 ----------
@@ -118,7 +121,7 @@ def _iv_at_delta(ch: dict, F: float, tau: float, cp: str, target: float = 0.25):
 def risk_reversal(ch: dict, F: float, tau: float):
     """25 Delta 風險逆轉＝25Δ 賣權隱含波動率 − 25Δ 買權隱含波動率（正值＝下檔保護比上檔貴）。"""
     p, c = _iv_at_delta(ch, F, tau, "put"), _iv_at_delta(ch, F, tau, "call")
-    if p is None or c is None:
+    if p is None or c is None or not (IV_MIN <= p <= IV_MAX and IV_MIN <= c <= IV_MAX):
         return None
     return {"put25": p, "call25": c, "rr": p - c}
 
@@ -164,7 +167,7 @@ def series_point(rows, contract, d: dt.date, exp: dt.date, td: int):
         return None
     tau = (exp - d).days / 365.0
     iv, k0 = atm_iv(ch, F, tau)
-    if iv is None:
+    if iv is None or not IV_MIN <= iv <= IV_MAX:
         return None
     return {"contract": contract, "exp": iso(exp), "td": td, "F": rnd(F, 1), "f_range_bp": rnd(rng, 1),
             "atm_strike": int(k0) if k0 == int(k0) else k0, "iv_atm": rnd(iv * 100), "_ch": ch, "_F": F, "_tau": tau}
@@ -181,7 +184,9 @@ def oi_change(cur, prev, d: dt.date) -> dict:
         if r["contract"] in live and r["oi"] is not None:
             tot[r["cp"]] += r["oi"]
             now[(r["contract"], r["cp"], r["strike"])] = r["oi"]
-    out = {"call_oi": tot["call"], "put_oi": tot["put"], "call_chg": None, "put_chg": None, "added": {}}
+    expiring = sorted({r["contract"] for r in cur if r["exp"] is not None and r["exp"] == d and "/" not in r["contract"]})
+    out = {"call_oi": tot["call"], "put_oi": tot["put"], "call_chg": None, "put_chg": None, "expiring_today": expiring,
+           "added": {}}
     if prev is None:
         return out
     was = {(r["contract"], r["cp"], r["strike"]): r["oi"] for r in prev if r["contract"] in live and r["oi"] is not None}
@@ -235,10 +240,19 @@ def flow(inst_rows, d: dt.date, prev_day) -> dict:
 
 
 # ---------- 波動率殘差 ----------
+def _robust_keep(ys):
+    """回傳 (中位數, 穩健標準差)；穩健標準差＝1.4826×絕對離差中位數。"""
+    med = statistics.median(ys)
+    return med, 1.4826 * statistics.median(abs(y - med) for y in ys)
+
+
 def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int = RESID_MIN):
     """台指 VIX 當日變動扣掉「指數漲跌能解釋的部分」之後的殘差。
     作法：y＝100×ln(VIX_t÷VIX_{t−1})，x＝加權指數當日報酬 %；用 d 之前 win 個交易日做最小平方法（不含 d，防前視），
-    殘差＝y_d −（a＋b×x_d），z＝殘差÷視窗內殘差標準差。負值＝波動率跌得比指數漲跌能解釋的多。"""
+    殘差＝y_d −（a＋b×x_d），z＝殘差÷視窗內殘差標準差。負值＝波動率跌得比指數漲跌能解釋的多。
+    官方 VIX 偶有單日跳動（2026-11-24 公布 26.18，前後兩日為 55.36、58.38）：視窗內 y 偏離中位數超過
+    RESID_MAD_K 個穩健標準差的日子不進迴歸（dropped 記錄剔除幾天）。前一交易日被剔除、當日又反向大幅變動時，
+    當日變動多半只是指數跳回來，標 unreliable＝'prev_vix_outlier'，報告不判讀。"""
     v = {r[0]: float(r[1]) for r in vix_rows if r[1] not in (None, "")}
     c = {r[0]: float(r[1]) for r in taiex_rows if r[1] not in (None, "")}
     dates = sorted(x for x in set(v) & set(c) if x <= d)
@@ -250,7 +264,12 @@ def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int =
             obs.append((b, (c[b] / c[a] - 1) * 100, 100 * math.log(v[b] / v[a])))
     if not obs or obs[-1][0] != d:
         return None
-    today, hist = obs[-1], obs[:-1][-win:]
+    today, raw = obs[-1], obs[:-1][-win:]
+    if len(raw) < min_n:
+        return None
+    med, rsd = _robust_keep([o[2] for o in raw])
+    out_of = (lambda y: abs(y - med) > RESID_MAD_K * rsd) if rsd > 0 else (lambda y: False)
+    hist = [o for o in raw if not out_of(o[2])]
     if len(hist) < min_n:
         return None
     mx, my = statistics.fmean(o[1] for o in hist), statistics.fmean(o[2] for o in hist)
@@ -266,9 +285,11 @@ def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int =
     exp_pct = alpha + beta * today[1]
     resid = today[2] - exp_pct
     prev_v = v[dates[-2]]
-    return {"n": len(hist), "beta": rnd(beta, 3), "ret_pct": rnd(today[1]), "vix_chg_pct": rnd(today[2]),
-            "expected_pct": rnd(exp_pct), "resid_pct": rnd(resid),
-            "resid_pts": rnd(prev_v * (math.exp(today[2] / 100) - math.exp(exp_pct / 100))), "z": rnd(resid / sd)}
+    snap_back = out_of(raw[-1][2]) and out_of(today[2]) and (raw[-1][2] - med) * (today[2] - med) < 0
+    return {"n": len(hist), "dropped": len(raw) - len(hist), "beta": rnd(beta, 3), "ret_pct": rnd(today[1]),
+            "vix_chg_pct": rnd(today[2]), "expected_pct": rnd(exp_pct), "resid_pct": rnd(resid),
+            "resid_pts": rnd(prev_v * (math.exp(today[2] / 100) - math.exp(exp_pct / 100))), "z": rnd(resid / sd),
+            "unreliable": "prev_vix_outlier" if snap_back else None}
 
 
 def realized_vol20(taiex_rows, d: str):
@@ -299,18 +320,29 @@ def calc(cur, prev, inst_rows, d: dt.date, prev_day, days, vix_rows, taiex_rows)
     vx = next((float(r[1]) for r in vix_rows if r[0] == ds and r[1] not in (None, "")), None)
     rv = realized_vol20(taiex_rows, ds)
     vol["vix"], vol["rv20"] = vx, rnd(rv)
-    vol["vrp"] = rnd(vx - rv) if vx is not None and rv is not None else None
-    vol["iv_resid"] = iv_residual(vix_rows, taiex_rows, ds)
+    # 官方 VIX 與自算月選價平隱含波動率互相檢查：差太多時 VIX 相關的兩個數字（vrp、殘差）不可靠
+    chk = None
+    if vx is not None and m:
+        diff = (vx / m["iv_atm"] - 1) * 100
+        chk = {"iv_month": m["iv_atm"], "diff_pct": rnd(diff), "suspect": abs(diff) > VIX_SUSPECT_PCT}
+    vol["vix_check"] = chk
+    bad = bool(chk and chk["suspect"])
+    vol["vrp"] = rnd(vx - rv) if vx is not None and rv is not None and not bad else None
+    res = iv_residual(vix_rows, taiex_rows, ds)
+    if res and bad:
+        res["unreliable"] = "vix_suspect"
+    vol["iv_resid"] = res
     return {"spec": SPEC, "flow": flow(inst_rows, d, prev_day), "oi": oi_change(cur, prev, d), "vol": vol}
 
 
 def series_row(asof: str, v: dict) -> dict:
     """寫進 series/opt_struct.csv 的一列（影子期累積用）。"""
     g = lambda *path: _dig(v, path)   # noqa: E731
+    unrel = g("vol", "iv_resid", "unreliable")   # 不可靠的殘差不進帳本，免得日後檢定被官方指數跳動污染
     row = {"date": asof, "iv_front": g("vol", "front", "iv_atm"), "iv_month": g("vol", "month", "iv_atm"),
            "iv_next": g("vol", "next", "iv_atm"), "rr25": g("vol", "rr25", "rr"), "vix": g("vol", "vix"),
-           "rv20": g("vol", "rv20"), "vrp": g("vol", "vrp"), "resid_pct": g("vol", "iv_resid", "resid_pct"),
-           "resid_z": g("vol", "iv_resid", "z"), "call_oi_chg": g("oi", "call_chg"), "put_oi_chg": g("oi", "put_chg")}
+           "rv20": g("vol", "rv20"), "vrp": g("vol", "vrp"), "resid_pct": None if unrel else g("vol", "iv_resid", "resid_pct"),
+           "resid_z": None if unrel else g("vol", "iv_resid", "z"), "vix_diff_pct": g("vol", "vix_check", "diff_pct"), "call_oi_chg": g("oi", "call_chg"), "put_oi_chg": g("oi", "put_chg")}
     for who in PLAYERS + ("others",):
         for cp in ("call", "put"):
             row[f"{who}_{cp}_trade"] = g("flow", who, cp, "trade_net")
@@ -319,7 +351,7 @@ def series_row(asof: str, v: dict) -> dict:
 
 
 SERIES_COLS = (["date", "iv_front", "iv_month", "iv_next", "rr25", "vix", "rv20", "vrp", "resid_pct", "resid_z",
-                "call_oi_chg", "put_oi_chg"]
+                "vix_diff_pct", "call_oi_chg", "put_oi_chg"]
                + [f"{w}_{cp}_{k}" for w in PLAYERS + ("others",) for cp in ("call", "put") for k in ("trade", "net")])
 
 

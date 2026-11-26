@@ -152,6 +152,10 @@ def brief(name: str, e: dict) -> str:
     return " ".join(f"{k}={v[k]}" for k in (pick or ()) if k in v)
 
 
+UNRELIABLE_ZH = {"vix_suspect": "官方台指 VIX 與自算月選隱含波動率差太多",
+                 "prev_vix_outlier": "前一交易日台指 VIX 疑似異常，當日變動只是跳回來"}
+
+
 def brief_opt_struct(v: dict) -> str:
     """選擇權籌碼與波動結構的一行摘要（細項讀 pool.json；定義見 docs/OPT_STRUCT.md）。"""
     sg = lambda x: "無" if x is None else f"{x:+d}" if isinstance(x, int) else f"{x:+.2f}"   # noqa: E731
@@ -171,8 +175,15 @@ def brief_opt_struct(v: dict) -> str:
         parts.append(f"25Δ 風險逆轉 {sg(vol['rr25']['rr'])}")
     if vol.get("vrp") is not None:
         parts.append(f"VIX−RV20 {sg(vol['vrp'])}")
-    if vol.get("iv_resid"):
-        parts.append(f"波動率殘差 {sg(vol['iv_resid']['resid_pts'])} 點（z {sg(vol['iv_resid']['z'])}）")
+    r = vol.get("iv_resid")
+    if r and r.get("unreliable"):
+        parts.append("波動率殘差不判讀（" + UNRELIABLE_ZH.get(r["unreliable"], r["unreliable"]) + "）")
+    elif r:
+        parts.append(f"波動率殘差 {sg(r['resid_pts'])} 點（z {sg(r['z'])}）")
+    if oi.get("expiring_today"):
+        parts.append("當日到期 " + "、".join(oi["expiring_today"]) + "（當日買賣含到期契約，部位看淨部位）")
+    if (vol.get("vix_check") or {}).get("suspect"):
+        parts.append(f"台指 VIX 疑似異常（與自算月選隱含波動率差 {sg(vol['vix_check']['diff_pct'])}%）")
     return "；".join(parts)
 
 
@@ -354,6 +365,11 @@ def main(argv=None, http=None) -> int:
             derived_via = "direct"
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
+    chk = (((out_items.get("opt_struct") or {}).get("v") or {}).get("vol") or {}).get("vix_check") or {}
+    if chk.get("suspect"):
+        # 官方 VIX 偶有單日跳動（2026-11-24）。用它推的一日 1σ 會跟著失真，提醒報告改用實際波動版
+        notes.append(f"台指 VIX 疑似異常：官方值與資料池自算的月選價平隱含波動率（{chk['iv_month']}%）相差 {chk['diff_pct']:+}%，"
+                     "一日 1σ 請改用 sigma1_rv_pts")
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
     if "bad" in health:
         # 資料健康（缺漏、衝突）照沿用；digest 裡的時鐘延遲可能是幾小時前的事件，改由 run_log 時間窗重新判斷
