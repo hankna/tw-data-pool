@@ -1,3 +1,4 @@
+import pytest
 import datetime as dt, json, tempfile
 from pathlib import Path
 from pool import calendar as cal, run as runmod, txo
@@ -138,3 +139,90 @@ def test_pool_read_src_zh_and_history():
     assert r["items"]["inst_spot"]["src_zh"].startswith("證交所")
     assert r["items"]["vix"]["src_zh"].startswith("期交所")
     assert len(r["taiex_hist"]) >= 21 and r["taiex_hist"][-1][0] == "2026-11-20"
+
+
+
+_OFF = {"FinMind", "twse.com.tw", "taifex.com.tw", "openapi.taifex.com.tw", "rate.bot.com.tw"}
+
+
+def _next_day(daily_margin=None, daily_raw=None, generated="2026-11-23T17:32:00+08:00", now="2026-11-23T18:23:00",
+              latest_margin=None):
+    """模擬 11/23（週一）：latest 的 margin 已改成今日 pending，前一交易日 11/20 的值只在 daily 留存。"""
+    out, d = build()
+    root = Path(d)
+    lt = json.loads((root / "latest" / "digest.json").read_text("utf-8"))
+    prev = lt["items"]["margin"]
+    assert prev["status"] == "ok" and prev["asof"] == "2026-11-20"
+    lt["items"]["margin"] = latest_margin or {"status": "pending", "asof": None}
+    lt["generated_at"] = generated
+    (root / "latest" / "digest.json").write_text(json.dumps(lt, ensure_ascii=False), "utf-8")
+    dp = root / "daily" / "2026-11-20" / "digest.json"
+    if daily_raw is not None:
+        if daily_raw == "DELETE":
+            dp.unlink()
+        else:
+            dp.write_text(daily_raw, "utf-8")
+    elif daily_margin is not None:
+        dd = json.loads(dp.read_text("utf-8"))
+        dd["items"]["margin"] = daily_margin
+        dp.write_text(json.dumps(dd, ensure_ascii=False), "utf-8")
+    f = tempfile.mktemp()
+    pool_read.main(["--profile", "panhou", "--date", "2026-11-23", "--out", f, "--data-dir", d, "--now", now],
+                   http=FixtureHttp(off=_OFF))
+    return prev, json.loads(Path(f).read_text("utf-8"))
+
+
+def test_pool_read_allow_prev_reads_previous_daily_digest():
+    # 18:23 盤後總覽：今日 margin 21:20 才公布，要拿前一交易日留存
+    prev, r = _next_day()
+    m = r["items"]["margin"]
+    assert m["via"] == "pool" and m["asof"] == "2026-11-20" and "允許前一日" in m["note"]
+    assert m["v"] == prev["v"] and "margin" not in r["read"]["missing"]
+    assert "margin" not in r["read"]["late"] and "margin" not in r["read"]["late_filled"]
+
+
+@pytest.mark.parametrize("bad", [
+    {"status": "pending", "asof": None},
+    {"status": "ok", "asof": "2026-11-19", "v": {"balance_bn": 1}},     # 比前一交易日舊
+    {"status": "ok", "asof": "2026-11-23", "v": {"balance_bn": 1}},     # 錯位到目標日之後
+    {"status": "ok", "asof": 20261120, "v": {"balance_bn": 1}},         # 型別不符
+    ["not", "a", "dict"],
+    {"status": "ok", "asof": "2026-11-20", "src": ["TWSE"], "v": {"balance_bn": 1}},   # src 型別不符
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN"},                     # 缺 v
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN", "v": {"chg_bn": 1}},  # 缺融資餘額
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN",
+     "v": {"balance_bn": "4341", "chg_bn": 1, "short_balance": 1, "short_chg": 1}},     # 餘額不是數值
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN",
+     "v": {"balance_bn": float("inf"), "chg_bn": 1, "short_balance": 1, "short_chg": 1}},  # 非有限值
+])
+def test_pool_read_allow_prev_rejects_bad_daily_entry(bad):
+    _, r = _next_day(daily_margin=bad)
+    assert "margin" in r["read"]["missing"] and r["items"]["margin"]["via"] == "none"
+
+
+def test_pool_read_allow_prev_misdated_latest_falls_to_daily():
+    # latest 有已完成但資料日錯位的值：不能採用，要改用 daily 的前一交易日值
+    prev, r = _next_day(latest_margin={"status": "ok", "asof": "2026-11-19", "src": "TWSE:MI_MARGN",
+                                       "v": {"balance_bn": 9999, "chg_bn": 1, "short_balance": 1,
+                                             "short_chg": 1}})
+    assert r["items"]["margin"]["asof"] == "2026-11-20" and r["items"]["margin"]["v"] == prev["v"]
+
+
+@pytest.mark.parametrize("raw", ["DELETE", "{not json", "[1, 2]"])
+def test_pool_read_allow_prev_survives_missing_or_corrupt_daily(raw):
+    _, r = _next_day(daily_raw=raw)
+    assert "margin" in r["read"]["missing"] and r["items"]["margin"]["via"] == "none"
+    need = json.loads((Path(__file__).parents[1] / "pool" / "catalog.json").read_text("utf-8"))["profiles"]["panhou"]["need"]
+    assert set(r["items"]) == set(need)   # 整份報告照常輸出
+
+
+def test_pool_read_allow_prev_skipped_when_pool_stale():
+    _, r = _next_day(generated="2026-11-21T06:00:00+08:00")
+    assert r["items"]["margin"]["via"] != "pool"
+
+
+def test_pool_read_prev_value_after_due_counts_as_late():
+    # 22:30 仍只有前一日值、公布後一小時內沒有執行紀錄：要列 late，不能算成當日已補齊
+    _, r = _next_day(generated="2026-11-23T22:00:00+08:00", now="2026-11-23T22:30:00")
+    assert r["items"]["margin"]["asof"] == "2026-11-20"
+    assert "margin" in r["read"]["late"] and "margin" not in r["read"]["late_filled"]
