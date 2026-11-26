@@ -253,7 +253,8 @@ def _trading_set(vix_rows, taiex_rows, days):
     任一來源缺某天，該天仍在集合裡，缺漏前後兩天就不會被當成相鄰（Codex #9 指正 3）。"""
     # 日曆涵蓋不到的期間：加權指數只在交易日公布，日期一律採用；VIX 只採平日的日期，
     # 週末的錯誤紀錄不算交易日，不會把週五與週一拆開（Codex #10 第 2 回合指正 1）
-    src = {r[0] for r in taiex_rows} | {r[0] for r in vix_rows if _weekday(r[0])}
+    # 無法解析的日期字串不算交易日，不讓它切斷相鄰交易日或占掉視窗名額（Codex MROC-178 低等級指正）
+    src = {r[0] for r in taiex_rows if _weekday(r[0]) is not None} | {r[0] for r in vix_rows if _weekday(r[0])}
     cal = sorted(iso(x) for x in (days or []))
     if not cal:
         return sorted(src)
@@ -263,12 +264,12 @@ def _trading_set(vix_rows, taiex_rows, days):
     return sorted(set(cal) | {x for x in src if x < lo or x > hi})
 
 
-def _weekday(x: str) -> bool:
-    """週一到週五為 True；無法解析的日期字串視為非交易日。"""
+def _weekday(x: str):
+    """週一到週五為 True、週末為 False；無法解析的日期字串回傳 None（呼叫端一律不當交易日）。"""
     try:
         return dt.date.fromisoformat(x).weekday() < 5
     except (TypeError, ValueError):
-        return False
+        return None
 
 
 def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int = RESID_MIN, days=None,

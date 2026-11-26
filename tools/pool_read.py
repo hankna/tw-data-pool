@@ -187,6 +187,30 @@ def brief_opt_struct(v: dict) -> str:
     return "；".join(parts)
 
 
+def _vix_check_for(out_items: dict, digest, vix_asof, now: dt.datetime):
+    """找與台指 VIX 同一資料日的 opt_struct.vol.vix_check：先看本次輸出，再看資料池快照（profile 沒列 opt_struct 時）。
+    VIX 沒有資料日就不判定，不拿別天的檢查套用（Codex MROC-181 指正 2）；快照產生時間晚於報告時點不用，
+    重跑較早時點時不會用到當時還沒產生的檢查（指正 1）；本次輸出缺 vix_check 時仍會再看快照（指正 3）。"""
+    if not vix_asof:
+        return None
+    snap = None
+    try:
+        if digest and dt.datetime.fromisoformat(digest["generated_at"]) <= now:
+            snap = (digest.get("items") or {}).get("opt_struct")
+    except (KeyError, TypeError, ValueError):
+        snap = None
+    for e in (out_items.get("opt_struct"), snap):
+        if not (isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("v"), dict)):
+            continue
+        if e.get("asof") != vix_asof:
+            continue
+        vol = e["v"].get("vol")
+        chk = vol.get("vix_check") if isinstance(vol, dict) else None
+        if isinstance(chk, dict):
+            return chk
+    return None
+
+
 def vix_note(chk):
     """官方 VIX 疑似異常時給報告的備註（2026-11-24 發生過單日跳動，用它推的一日 1σ 會跟著失真）。
     依快照實際有的欄位標名稱：新版是 30 天價平隱含波動率（iv30），舊快照只有月選（iv_month）（Codex #10 指正 3）。"""
@@ -379,9 +403,14 @@ def main(argv=None, http=None) -> int:
             derived_via = "direct"
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
-    vn = vix_note((((out_items.get("opt_struct") or {}).get("v") or {}).get("vol") or {}).get("vix_check"))
+    # 官方 VIX 疑似異常：所有 profile 都要知道，不只盤後總覽（朝邸錄、美台股市、盤中簡報用的是前一交易日的 VIX）
+    vn = vix_note(_vix_check_for(out_items, digest, vx.get("asof") if vx.get("status") in DONE else None, now))
     if vn:
         notes.append(vn)
+        if vx.get("status") in DONE:
+            vx["suspect"] = True                     # 項目照樣提供，但標明不可直接引用
+        if derived and derived.get("sigma1_vix_pts") is not None:
+            derived = {**derived, "sigma1_vix_pts": None}   # 用異常 VIX 推的一日 1σ 不提供，報告改用 sigma1_rv_pts
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
     if "bad" in health:
         # 資料健康（缺漏、衝突）照沿用；digest 裡的時鐘延遲可能是幾小時前的事件，改由 run_log 時間窗重新判斷
@@ -419,7 +448,8 @@ def main(argv=None, http=None) -> int:
     print("項目｜狀態｜資料日｜取得｜來源｜數值")
     for n in prof["need"]:
         e = out_items[n]
-        print(f"{n}｜{e.get('status', '?')}｜{e.get('asof') or '-'}｜{e.get('via', '-')}｜{e.get('src_zh', '-')}｜{brief(n, e)}")
+        b = brief(n, e) + ("（疑似異常，勿引用）" if e.get("suspect") else "")
+        print(f"{n}｜{e.get('status', '?')}｜{e.get('asof') or '-'}｜{e.get('via', '-')}｜{e.get('src_zh', '-')}｜{b}")
     d = result["derived"]
     if d:
         tag = "（讀穿資料本機計算）" if derived_via == "direct" else ""

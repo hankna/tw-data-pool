@@ -758,3 +758,77 @@ def test_usd_twd_not_collected_intraday_even_when_read_through():
     assert e["status"] == "pending"
     v, _ = _bot(MULTI, now=dt.datetime(2026, 11, 21, 9, 0, tzinfo=TW))   # 隔天讀前一日不受門檻影響
     assert v["spot_buy"] == 33.05
+
+
+# ---- 官方 VIX 疑似異常：所有 profile 都要擋（2026-11-27） ----
+def _vix_suspect_pool(data, suspect=True, os_asof="2026-11-25"):
+    d = json.loads((data / "latest" / "digest.json").read_text("utf-8"))
+    d["items"] = {
+        "taiex": {"status": "ok", "asof": "2026-11-25", "src": "TWSE:x",
+                  "v": {"open": 1, "high": 1, "low": 1, "close": 96, "chg": 0, "chg_pct": 0, "turnover_bn": 1}},
+        "vix": {"status": "ok", "asof": "2026-11-25", "src": "TAIFEX:file", "v": {"close": 26.18, "chg": -29.2}},
+        "opt_struct": {"status": "ok", "asof": os_asof, "src": "TAIFEX:optDataDown",
+                       "v": {"vol": {"vix_check": {"iv30": 43.32, "diff_pct": -39.57, "suspect": suspect}}}}}
+    d["derived"] = {"rv20_annual_pct": 9.9, "sigma1_rv_pts": 1.0, "sigma1_vix_pts": 1.6, "closes_7": [["2026-11-25", 96.0]]}
+    (data / "latest" / "digest.json").write_text(json.dumps(d), "utf-8")
+
+
+def _read_profile(tmp_path, data, profile, date, now):
+    pr = _load("pool_read", "tools/pool_read.py")
+    out = tmp_path / f"{profile}.json"
+    pr.main(["--profile", profile, "--date", date, "--now", now, "--data-dir", str(data), "--out", str(out)], http=object())
+    return json.loads(out.read_text("utf-8"))
+
+
+@pytest.mark.parametrize("profile", ["midday", "chaodilu", "ustw"])
+def test_vix_suspect_reaches_profiles_without_opt_struct(tmp_path, monkeypatch, profile):
+    data = _setup(tmp_path, monkeypatch)
+    _vix_suspect_pool(data)
+    r = _read_profile(tmp_path, data, profile, "2026-11-26", "2026-11-26T05:37:00+08:00")
+    assert "opt_struct" not in r["items"]                                  # profile 沒列也要判定
+    assert r["items"]["vix"]["suspect"] is True and r["items"]["vix"]["v"]["close"] == 26.18
+    assert r["derived"]["sigma1_vix_pts"] is None and r["derived"]["sigma1_rv_pts"] == 1.0
+    assert any("台指 VIX 疑似異常" in n and "30 天價平隱含波動率（43.32%）" in n for n in r["read"]["notes"])
+
+
+@pytest.mark.parametrize("suspect,os_asof", [(False, "2026-11-25"), (True, "2026-11-24")])
+def test_vix_kept_when_not_suspect_or_check_is_for_another_day(tmp_path, monkeypatch, suspect, os_asof):
+    data = _setup(tmp_path, monkeypatch)
+    _vix_suspect_pool(data, suspect=suspect, os_asof=os_asof)
+    r = _read_profile(tmp_path, data, "midday", "2026-11-26", "2026-11-26T11:12:00+08:00")
+    assert "suspect" not in r["items"]["vix"] and r["derived"]["sigma1_vix_pts"] == 1.6
+    assert not any("疑似異常" in n for n in r["read"]["notes"])
+
+
+# ---- Codex MROC-181 三項指正（2026-11-27） ----
+def _os(asof, chk):
+    return {"status": "ok", "asof": asof, "v": {"vol": {} if chk is None else {"vix_check": chk}}}
+
+
+def test_vix_check_lookup_rules():
+    pr = _load("pool_read", "tools/pool_read.py")
+    now = dt.datetime.fromisoformat("2026-11-26T05:37:00+08:00")
+    bad = {"iv30": 43.32, "diff_pct": -39.57, "suspect": True}
+    snap = {"generated_at": "2026-11-25T20:00:00+08:00", "items": {"opt_struct": _os("2026-11-25", bad)}}
+    assert pr._vix_check_for({}, snap, "2026-11-25", now) == bad
+    # 指正 1：快照晚於報告時點就不用（重跑較早時點不能看到之後才產生的檢查）
+    late = {**snap, "generated_at": "2026-11-26T06:00:00+08:00"}
+    assert pr._vix_check_for({}, late, "2026-11-25", now) is None
+    # 指正 2：VIX 沒有資料日就不判定
+    assert pr._vix_check_for({}, snap, None, now) is None
+    assert pr._vix_check_for({}, snap, "2026-11-24", now) is None
+    # 指正 3：本次輸出的 opt_struct 缺 vix_check 時，仍看同一資料日的快照
+    assert pr._vix_check_for({"opt_struct": _os("2026-11-25", None)}, snap, "2026-11-25", now) == bad
+
+
+def test_vix_not_done_keeps_sigma_and_adds_no_note(tmp_path, monkeypatch):
+    from pool import digest as dg
+    data = _setup(tmp_path, monkeypatch)
+    _vix_suspect_pool(data)
+    d = json.loads((data / "latest" / "digest.json").read_text("utf-8"))
+    del d["items"]["vix"]
+    (data / "latest" / "digest.json").write_text(json.dumps(d), "utf-8")
+    monkeypatch.setattr(dg, "resolve", lambda name, cfg, ctx, policy: {"status": "missing", "asof": None})
+    r = _read_profile(tmp_path, data, "midday", "2026-11-26", "2026-11-26T11:12:00+08:00")
+    assert r["items"]["vix"]["status"] == "missing" and "suspect" not in r["items"]["vix"]
+    assert r["derived"]["sigma1_vix_pts"] == 1.6 and not any("疑似異常" in n for n in r["read"]["notes"])

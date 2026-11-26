@@ -109,12 +109,13 @@ def _oi_reference(ctx, d: str):
     if pc.get("status") in done and pc.get("asof") == d and str(pc.get("src", "")).startswith("TAIFEX:openapi"):
         pv = pc.get("v") or {}
         # 口數缺漏的官方資料不能當參照，改用 FinMind，免得把缺值誤判成對帳不符（Codex #10 第 2 回合指正 3）
-        if isinstance(pv.get("put_oi"), int) and isinstance(pv.get("call_oi"), int):
+        # 布林值也是 int 的子類別，要排除（Codex MROC-178 低等級指正）
+        if type(pv.get("put_oi")) is int and type(pv.get("call_oi")) is int:
             return "期交所賣權買權比", pv["put_oi"], pv["call_oi"]
     t = ctx.items.get("txo_oi") or {}
     if t.get("status") in done and t.get("asof") == d and str(t.get("src", "")).startswith("FinMind"):
         s = (t.get("v") or {}).get("oi_sum_excl_expiring") or {}
-        if isinstance(s.get("put"), int) and isinstance(s.get("call"), int):
+        if type(s.get("put")) is int and type(s.get("call")) is int:
             return "FinMind 逐履約價合計", s["put"], s["call"]
     return None
 
