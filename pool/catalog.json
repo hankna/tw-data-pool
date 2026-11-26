@@ -293,7 +293,7 @@
   },
   "us_yield": {
    "group": "us_close",
-   "due": "06:05",
+   "due": "06:05", "timeout_h": 24,
    "sources": [
     "FinMind:GovernmentBondsYield?data_id=United States 10-Year,United States 2-Year"
    ],
