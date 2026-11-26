@@ -187,15 +187,27 @@ def brief_opt_struct(v: dict) -> str:
     return "；".join(parts)
 
 
-def _vix_check_for(out_items: dict, digest, vix_asof):
-    """找與台指 VIX 同一資料日的 opt_struct.vol.vix_check：先看本次輸出，再看資料池快照（profile 沒列 opt_struct 時）。"""
-    for e in (out_items.get("opt_struct"), ((digest or {}).get("items") or {}).get("opt_struct")):
+def _vix_check_for(out_items: dict, digest, vix_asof, now: dt.datetime):
+    """找與台指 VIX 同一資料日的 opt_struct.vol.vix_check：先看本次輸出，再看資料池快照（profile 沒列 opt_struct 時）。
+    VIX 沒有資料日就不判定，不拿別天的檢查套用（Codex MROC-181 指正 2）；快照產生時間晚於報告時點不用，
+    重跑較早時點時不會用到當時還沒產生的檢查（指正 1）；本次輸出缺 vix_check 時仍會再看快照（指正 3）。"""
+    if not vix_asof:
+        return None
+    snap = None
+    try:
+        if digest and dt.datetime.fromisoformat(digest["generated_at"]) <= now:
+            snap = (digest.get("items") or {}).get("opt_struct")
+    except (KeyError, TypeError, ValueError):
+        snap = None
+    for e in (out_items.get("opt_struct"), snap):
         if not (isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("v"), dict)):
             continue
-        if vix_asof and e.get("asof") != vix_asof:
+        if e.get("asof") != vix_asof:
             continue
         vol = e["v"].get("vol")
-        return vol.get("vix_check") if isinstance(vol, dict) else None
+        chk = vol.get("vix_check") if isinstance(vol, dict) else None
+        if isinstance(chk, dict):
+            return chk
     return None
 
 
@@ -392,7 +404,7 @@ def main(argv=None, http=None) -> int:
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
     # 官方 VIX 疑似異常：所有 profile 都要知道，不只盤後總覽（朝邸錄、美台股市、盤中簡報用的是前一交易日的 VIX）
-    vn = vix_note(_vix_check_for(out_items, digest, vx.get("asof")))
+    vn = vix_note(_vix_check_for(out_items, digest, vx.get("asof") if vx.get("status") in DONE else None, now))
     if vn:
         notes.append(vn)
         if vx.get("status") in DONE:

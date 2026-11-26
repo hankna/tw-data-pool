@@ -798,3 +798,37 @@ def test_vix_kept_when_not_suspect_or_check_is_for_another_day(tmp_path, monkeyp
     r = _read_profile(tmp_path, data, "midday", "2026-11-26", "2026-11-26T11:12:00+08:00")
     assert "suspect" not in r["items"]["vix"] and r["derived"]["sigma1_vix_pts"] == 1.6
     assert not any("疑似異常" in n for n in r["read"]["notes"])
+
+
+# ---- Codex MROC-181 三項指正（2026-11-27） ----
+def _os(asof, chk):
+    return {"status": "ok", "asof": asof, "v": {"vol": {} if chk is None else {"vix_check": chk}}}
+
+
+def test_vix_check_lookup_rules():
+    pr = _load("pool_read", "tools/pool_read.py")
+    now = dt.datetime.fromisoformat("2026-11-26T05:37:00+08:00")
+    bad = {"iv30": 43.32, "diff_pct": -39.57, "suspect": True}
+    snap = {"generated_at": "2026-11-25T20:00:00+08:00", "items": {"opt_struct": _os("2026-11-25", bad)}}
+    assert pr._vix_check_for({}, snap, "2026-11-25", now) == bad
+    # 指正 1：快照晚於報告時點就不用（重跑較早時點不能看到之後才產生的檢查）
+    late = {**snap, "generated_at": "2026-11-26T06:00:00+08:00"}
+    assert pr._vix_check_for({}, late, "2026-11-25", now) is None
+    # 指正 2：VIX 沒有資料日就不判定
+    assert pr._vix_check_for({}, snap, None, now) is None
+    assert pr._vix_check_for({}, snap, "2026-11-24", now) is None
+    # 指正 3：本次輸出的 opt_struct 缺 vix_check 時，仍看同一資料日的快照
+    assert pr._vix_check_for({"opt_struct": _os("2026-11-25", None)}, snap, "2026-11-25", now) == bad
+
+
+def test_vix_not_done_keeps_sigma_and_adds_no_note(tmp_path, monkeypatch):
+    from pool import digest as dg
+    data = _setup(tmp_path, monkeypatch)
+    _vix_suspect_pool(data)
+    d = json.loads((data / "latest" / "digest.json").read_text("utf-8"))
+    del d["items"]["vix"]
+    (data / "latest" / "digest.json").write_text(json.dumps(d), "utf-8")
+    monkeypatch.setattr(dg, "resolve", lambda name, cfg, ctx, policy: {"status": "missing", "asof": None})
+    r = _read_profile(tmp_path, data, "midday", "2026-11-26", "2026-11-26T11:12:00+08:00")
+    assert r["items"]["vix"]["status"] == "missing" and "suspect" not in r["items"]["vix"]
+    assert r["derived"]["sigma1_vix_pts"] == 1.6 and not any("疑似異常" in n for n in r["read"]["notes"])
