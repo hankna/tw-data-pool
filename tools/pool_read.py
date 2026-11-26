@@ -34,6 +34,13 @@ def _sh(cmd, cwd=None, timeout=60):
     return r.stdout
 
 
+def _prev_ok(e, tw_prev: str):
+    """前一交易日的有效值：結構正確、狀態完成、資料日剛好是前一交易日；否則回傳 None。"""
+    if isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("asof"), str) and e["asof"] == tw_prev:
+        return e
+    return None
+
+
 def read_data_file(rel: str, data_dir: str | None):
     """讀 data 分支的檔案：本機目錄（測試）→ gh api raw → git fetch。回傳 bytes。"""
     if data_dir:
@@ -196,7 +203,7 @@ def main(argv=None, http=None) -> int:
             stale = True
             notes.append(f"資料池已過期（{age:.0f} 小時前產生）")
     ctx = Ctx(http=http, cal=cal, now=now, days=days)
-    out_items, via_direct, missing = {}, [], []
+    out_items, via_direct, missing, used_prev = {}, [], [], []
     for name in prof["need"]:
         cfg = cat["items"][name]
         tgt = dg._target(cfg["group"], cal)
@@ -207,18 +214,18 @@ def main(argv=None, http=None) -> int:
             ctx.items[name] = e
             continue
         if name in prof.get("allow_prev", []) and not stale:
-            # latest 在新交易日開盤後就把今日改成 pending，前一日的值只留在 daily/{前一交易日}/digest.json
-            prev = e if (e and e.get("status") in DONE and (e.get("asof") or "") >= cal["tw_prev"]) else None
+            # latest 在新交易日開盤後就把今日改成 pending，前一日的值只留在 daily/{前一交易日}/digest.json；
+            # 兩條路都只接受資料日剛好是前一交易日的有效值，不拿更舊或錯位的資料
+            prev = _prev_ok(e, cal["tw_prev"])
             if prev is None:
                 try:
-                    pe = json.loads(read_data_file(f"daily/{cal['tw_prev']}/digest.json", a.data_dir)
-                                    .decode("utf-8")).get("items", {}).get(name)
+                    pd = json.loads(read_data_file(f"daily/{cal['tw_prev']}/digest.json", a.data_dir).decode("utf-8"))
+                    prev = _prev_ok(pd.get("items", {}).get(name) if isinstance(pd, dict) else None, cal["tw_prev"])
                 except Exception:  # noqa: BLE001
-                    pe = None
-                if pe and pe.get("status") in DONE and (pe.get("asof") or "") >= cal["tw_prev"]:
-                    prev = pe
+                    prev = None   # 留存不存在、損毀或結構不符：照舊走讀穿／列缺
             if prev:
                 out_items[name] = {**prev, "via": "pool", "note": "資料日早於目標日（此項目允許前一日）"}
+                used_prev.append(name)
                 continue
         if a.no_direct:
             out_items[name] = e or {"status": "missing", "asof": None}
@@ -258,7 +265,7 @@ def main(argv=None, http=None) -> int:
         limit = due + dt.timedelta(minutes=LATE_MIN)
         if now <= limit or any(due <= t <= limit for t in runs):
             continue
-        if name in via_direct or name in missing:
+        if name in via_direct or name in missing or name in used_prev:   # 用前一日值不算當日已補齊
             late.append(name)
         elif now - due <= dt.timedelta(hours=CLOCK_WINDOW_H):
             late_filled.append(name)
