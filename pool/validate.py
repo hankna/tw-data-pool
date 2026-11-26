@@ -43,3 +43,9 @@ def check(name: str, v: dict, cfg: dict) -> None:
         s = v["oi_sum_excl_expiring"]
         if s["call"] < 0 or s["put"] < 0 or not v.get("monthly"):
             raise SourceError("選擇權未平倉彙總異常")
+    if name == "opt_struct":
+        o, m = v["oi"], (v["vol"] or {}).get("month")
+        if o["call_oi"] <= 0 or o["put_oi"] <= 0:
+            raise SourceError("選擇權未平倉合計異常")
+        if not m or not 3 <= m["iv_atm"] <= 400:
+            raise SourceError("月選價平隱含波動率缺漏或超出合理範圍")

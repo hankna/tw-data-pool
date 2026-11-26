@@ -48,3 +48,11 @@
 1. 資料來源狀態有「資料池快照」那一行，缺項與讀穿項目合理。
 2. 關鍵數字（加權收盤、外資現貨、外資期貨淨未平倉、賣權買權比、台指 VIX）與 `daily/<日期>/digest.json` 相同。
 3. 執行時間與基準比較（11/20：美台 15.5 分、盤中 13.4 分、盤後 14.5 分）。
+
+## 選擇權籌碼與波動結構（2026-11-26 新增，目前只有盤後總覽使用）
+
+`panhou` profile 多一個項目 `opt_struct`（定義見 `docs/OPT_STRUCT.md`）。盤後總覽提示詞加這一段：
+
+```
+10. 選擇權籌碼與波動結構：資料池的 opt_struct 為 ok 時，在產出 content.json 之前執行 python3 <tw-index-forecast>/briefs/_common/optpanel.py pool.json --out-dir <工作目錄>，把 optpanel.json 的區塊原樣放進第二節「期權籌碼」grid 之後（數字與說明文字不改寫），後面接一個「判讀」panel。程式印出「略過」或 opt_struct 不是 ok 時，整段省略，只在資料來源狀態寫一行。
+```

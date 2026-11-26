@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from . import calendar as cal_mod, digest as dg
 from .derive import derive
+from .optstruct import series_row as _opt_row
 from .http import Http
 from .sources import Ctx
 from .store import Store
@@ -57,6 +58,8 @@ def update_series(store: Store, items: dict, side: dict, now_iso: str):
     if (e := g("margin")):
         v = e["v"]
         store.upsert("margin_daily", [{"date": e["asof"], "balance_bn": v["balance_bn"], "short_balance": v["short_balance"]}])
+    if (e := g("opt_struct")):
+        store.upsert("opt_struct", [_opt_row(e["asof"], e["v"])])
     avail = [{"date": e["asof"], "item": n, "first_ok_at": now_iso, "src": e.get("src", "")}
              for n, e in items.items() if e.get("status") in DONE and e.get("fresh")]
     if avail:

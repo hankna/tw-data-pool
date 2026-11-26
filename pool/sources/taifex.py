@@ -159,6 +159,59 @@ def txo_rows(ctx):
     return out
 
 
+# ---- 選擇權籌碼與波動結構（opt_struct）用的原始列 ----
+_WHO = {"自營商": "dealer", "投信": "trust", "外資及陸資": "foreign"}
+
+
+def opt_chain(ctx, d):
+    """optDataDown 一般時段逐履約價列：契約、買賣權、履約價、結算價、未平倉、到期日（CSV 第 21 欄，缺就用規則推算）。"""
+    key = iso(d).replace("-", "/")
+    out = []
+    for r in _csv(ctx, "optDataDown", "TXO", d):
+        if len(r) > 17 and r[1] == "TXO" and r[17].strip() == "一般" and r[0] == key:
+            c, oi = r[2].strip(), num(r[11])
+            raw_exp = r[20].strip() if len(r) > 20 else ""
+            exp = parse_date(raw_exp) if len(raw_exp) == 8 and raw_exp.isdigit() else txo_mod.expiry(c, ctx.days)
+            out.append({"contract": c, "cp": "call" if r[4].strip() == "買權" else "put", "strike": num(r[3]),
+                        "settle": num(r[10]), "oi": int(oi) if oi is not None else None, "exp": exp})
+    if not out or not any(x["settle"] is not None for x in out):
+        raise NotYet(f"期交所 optDataDown 尚無 {iso(d)}（或結算價未公布）")
+    return out
+
+
+def opt_inst_range(ctx, d0, d1):
+    """callsAndPutsDateDown：臺指選擇權三大法人買賣權分計，可查區間（一次取回當日與前一交易日）。"""
+    a, b = iso(d0).replace("-", "/"), iso(d1).replace("-", "/")
+    raw = ctx.cached(("csv", "callsAndPuts", a, b), lambda: ctx.http.bytes(
+        "https://www.taifex.com.tw/cht/3/callsAndPutsDateDown",
+        post={"queryStartDate": a, "queryEndDate": b, "commodityId": "TXO"}))
+    out = []
+    for r in csv.reader(io.StringIO(raw.decode("big5", "ignore"))):
+        if len(r) > 12 and r[1].strip() == "臺指選擇權" and r[3].strip() in _WHO and r[2].strip().upper() in ("CALL", "PUT"):
+            vals = [num(r[i]) for i in (4, 6, 10, 12)]
+            if any(x is None for x in vals):
+                raise SourceError("期交所選擇權法人買賣權分計有空白欄位")
+            out.append({"date": r[0].strip().replace("/", "-"), "cp": r[2].strip().lower(), "who": _WHO[r[3].strip()],
+                        "buy": int(vals[0]), "sell": int(vals[1]), "long_oi": int(vals[2]), "short_oi": int(vals[3])})
+    if not any(x["date"] == iso(d1) for x in out):
+        raise NotYet(f"期交所選擇權法人買賣權分計尚無 {iso(d1)}")
+    return out
+
+
+def vix_history(ctx, D, months=5):
+    """台指 VIX 每日收盤 [(日期, 收盤)]：往回讀幾個月的官方月檔（每檔不到 1 KB）；讀不到的月份略過。"""
+    out, y, m = {}, D.year, D.month
+    for _ in range(months):
+        try:
+            for ymd_, close, _avg in _vix_file(ctx, f"{y}{m:02d}"):
+                if close is not None:
+                    out[f"{ymd_[:4]}-{ymd_[4:6]}-{ymd_[6:]}"] = close
+        except SourceError:
+            pass
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    return sorted(out.items())
+
+
 # ---- VIX ----
 def _vix_file(ctx, ym):
     url = f"https://www.taifex.com.tw/file/taifex/Dailydownload/vix/log2data/{ym}new.txt"

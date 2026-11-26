@@ -106,6 +106,7 @@ _ZH = [
     ("TAIFEX:openapi/PutCallRatio", lambda s: "期交所 OpenAPI 賣權買權比"),
     ("TAIFEX:openapi/OpenInterestOfLargeTraders", lambda s: "期交所 OpenAPI 大額交易人未沖銷部位"),
     ("TAIFEX:futDataDown", lambda s: "期交所 期貨每日交易行情下載"),
+    ("TAIFEX:optDataDown+callsAndPutsDateDown", lambda s: "期交所 選擇權每日行情與三大法人買賣權分計（資料池計算）"),
     ("TAIFEX:optDataDown", lambda s: "期交所 選擇權每日交易行情下載"),
     ("TAIFEX:file", lambda s: "期交所 臺指選擇權波動率指數每日檔"),
     ("derived:", lambda s: "資料池自算（逐履約價加總，已排除當日到期）"),
@@ -144,9 +145,63 @@ def brief(name: str, e: dict) -> str:
     if name == "opt_inst":
         f = v["foreign"]
         return f"外資 call_net={f['call_net_oi']} put_net={f['put_net_oi']}"
+    if name == "opt_struct":
+        return brief_opt_struct(v)
     if name in ("us_index", "us_stock"):
         return " ".join(f"{k}={x['close']}({x['chg_pct']:+}%)" for k, x in v.items())
     return " ".join(f"{k}={v[k]}" for k in (pick or ()) if k in v)
+
+
+UNRELIABLE_ZH = {"vix_suspect": "官方台指 VIX 與自算月選隱含波動率差太多",
+                 "prev_vix_outlier": "前一交易日台指 VIX 疑似異常，當日變動只是跳回來"}
+
+
+def brief_opt_struct(v: dict) -> str:
+    """選擇權籌碼與波動結構的一行摘要（細項讀 pool.json；定義見 docs/OPT_STRUCT.md）。"""
+    sg = lambda x: "無" if x is None else f"{x:+d}" if isinstance(x, int) else f"{x:+.2f}"   # noqa: E731
+    fl, oi, vol = v.get("flow") or {}, v.get("oi") or {}, v.get("vol") or {}
+    parts = []
+    zh = {"dealer": "自營商", "foreign": "外資", "others": "三大法人以外"}
+    for who in ("dealer", "foreign", "others"):
+        w = fl.get(who)
+        if w:
+            parts.append(f"{zh[who]} 買權淨 {sg(w['call']['oi_net'])}（當日 {sg(w['call']['trade_net'])}）"
+                         f"賣權淨 {sg(w['put']['oi_net'])}（當日 {sg(w['put']['trade_net'])}）")
+    parts.append(f"未平倉增減 買權 {sg(oi.get('call_chg'))} 賣權 {sg(oi.get('put_chg'))}")
+    iv = "／".join(f"{vol[k]['contract']} {vol[k]['iv_atm']}%" for k in ("front", "month", "next") if vol.get(k))
+    if iv:
+        parts.append("價平 IV " + iv)
+    if vol.get("rr25"):
+        parts.append(f"25Δ 風險逆轉 {sg(vol['rr25']['rr'])}")
+    if vol.get("vrp") is not None:
+        parts.append(f"VIX−RV20 {sg(vol['vrp'])}")
+    r = vol.get("iv_resid")
+    if r and r.get("unreliable"):
+        parts.append("波動率殘差不判讀（" + UNRELIABLE_ZH.get(r["unreliable"], r["unreliable"]) + "）")
+    elif r:
+        parts.append(f"波動率殘差 {sg(r['resid_pts'])} 點（z {sg(r['z'])}）")
+    if oi.get("expiring_today"):
+        parts.append("當日到期 " + "、".join(oi["expiring_today"]) + "（當日買賣含到期契約，部位看淨部位）")
+    if (vol.get("vix_check") or {}).get("suspect"):
+        parts.append(f"台指 VIX 疑似異常（與自算月選隱含波動率差 {sg(vol['vix_check']['diff_pct'])}%）")
+    return "；".join(parts)
+
+
+class _SeriesReader:
+    """讀穿時給來源程式用的序列讀取器（只讀 data 分支的 series/*.csv；讀不到回傳空清單）。"""
+
+    def __init__(self, data_dir):
+        self.data_dir, self._c = data_dir, {}
+
+    def rows(self, name):
+        if name not in self._c:
+            try:
+                import csv, io
+                self._c[name] = list(csv.DictReader(io.StringIO(
+                    read_data_file(f"series/{name}.csv", self.data_dir).decode("utf-8"))))
+            except Exception:  # noqa: BLE001
+                self._c[name] = []
+        return self._c[name]
 
 
 def main(argv=None, http=None) -> int:
@@ -206,7 +261,7 @@ def main(argv=None, http=None) -> int:
         if age > STALE_HOURS:
             stale = True
             notes.append(f"資料池已過期（{age:.0f} 小時前產生）")
-    ctx = Ctx(http=http, cal=cal, now=now, days=days)
+    ctx = Ctx(http=http, cal=cal, now=now, days=days, series=_SeriesReader(a.data_dir))
     out_items, via_direct, missing, used_prev = {}, [], [], []
     for name in prof["need"]:
         cfg = cat["items"][name]
@@ -310,6 +365,11 @@ def main(argv=None, http=None) -> int:
             derived_via = "direct"
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
+    chk = (((out_items.get("opt_struct") or {}).get("v") or {}).get("vol") or {}).get("vix_check") or {}
+    if chk.get("suspect"):
+        # 官方 VIX 偶有單日跳動（2026-11-24）。用它推的一日 1σ 會跟著失真，提醒報告改用實際波動版
+        notes.append(f"台指 VIX 疑似異常：官方值與資料池自算的月選價平隱含波動率（{chk['iv_month']}%）相差 {chk['diff_pct']:+}%，"
+                     "一日 1σ 請改用 sigma1_rv_pts")
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
     if "bad" in health:
         # 資料健康（缺漏、衝突）照沿用；digest 裡的時鐘延遲可能是幾小時前的事件，改由 run_log 時間窗重新判斷

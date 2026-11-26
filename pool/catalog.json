@@ -201,6 +201,20 @@
    },
    "note": "官方月檔為 Big5、Tab 分隔，前兩列是表頭與分隔線。月初第一個交易日前，新月份檔可能不存在，改讀上月檔取前一日值。"
   },
+  "opt_struct": {
+   "group": "tw_close",
+   "due": "16:15",
+   "sources": [
+    "TAIFEX:optDataDown+callsAndPutsDateDown"
+   ],
+   "fields": {
+    "spec": "opt_struct/1（定義見 docs/OPT_STRUCT.md）",
+    "flow": "dealer|trust|foreign|others × call|put：trade_net 當日買−賣口數、oi_net 買方−賣方未平倉口數、oi_net_chg 對前一交易日；others＝三大法人合計的反向（散戶與一般法人）；dealer_opt_net＝自營商買權淨額＋賣權淨額",
+    "oi": "未到期契約的 call_oi、put_oi 與對前一交易日增減 call_chg、put_chg；added＝最近週選與月選各自未平倉增加最多的履約價 [履約價, 增加口數, 未平倉]；pc_match＝合計是否等於 pc_ratio",
+    "vol": "front｜month｜next 的價平隱含波動率 iv_atm（%）、遠期價 F、距到期交易日 td；front_minus_month、month_minus_next（百分點）；rr25＝月選 25Δ 賣權 IV − 25Δ 買權 IV；vix、rv20、vrp＝vix−rv20；iv_resid＝台指 VIX 變動扣掉指數漲跌連動後的殘差（resid_pts 點、z 標準化）"
+   },
+   "note": "盤後事實，不含方向判斷。前一交易日行情取不到時 oi 的增減為空；台指 VIX 或加權歷史不足 30 個交易日時 iv_resid 為空。非關鍵項目，缺漏不觸發警示。"
+  },
   "margin": {
    "group": "tw_close",
    "due": "21:20",
@@ -293,7 +307,8 @@
   },
   "us_yield": {
    "group": "us_close",
-   "due": "06:05", "timeout_h": 24,
+   "due": "06:05",
+   "timeout_h": 24,
    "sources": [
     "FinMind:GovernmentBondsYield?data_id=United States 10-Year,United States 2-Year"
    ],
@@ -386,7 +401,8 @@
     "large_traders",
     "vix",
     "usd_twd",
-    "margin"
+    "margin",
+    "opt_struct"
    ],
    "allow_prev": [
     "margin"

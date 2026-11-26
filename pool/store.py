@@ -5,6 +5,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+from .optstruct import SERIES_COLS as _OPT_COLS
 
 SERIES = {
     "taiex_daily": ["date", "open", "high", "low", "close", "turnover_bn"],
@@ -13,6 +14,7 @@ SERIES = {
     "opt_pc": ["date", "pc_oi_pct", "pc_vol_pct", "put_oi", "call_oi"],
     "vix_daily": ["date", "close", "close_1min_avg"],
     "margin_daily": ["date", "balance_bn", "short_balance"],
+    "opt_struct": _OPT_COLS,
     "tw_calendar": ["date"],
     "availability": ["date", "item", "first_ok_at", "src"],
 }

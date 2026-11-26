@@ -5,7 +5,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from . import calendar as cal_mod, txo as txo_mod, validate
+from . import calendar as cal_mod, optstruct, txo as txo_mod, validate
 from .derive import derive
 from .sources import Ctx, bot, finmind, taifex, tpex, twse
 from .util import NotYet, SourceError, iso, parse_date
@@ -36,6 +36,54 @@ def _pc_derived(ctx):
             "put_oi": s["put"], "call_oi": s["call"]}, parse_date(t["asof"])
 
 
+def _closes(ctx, D):
+    """加權指數每日收盤 [(日期, 收盤)]：資料池序列＋本次已取得的值；不足 62 個交易日再向 FinMind 取 130 天。"""
+    got = {}
+    if ctx.series is not None:
+        for r in ctx.series.rows("taiex_daily"):
+            if r.get("close"):
+                got[r["date"]] = float(r["close"])
+    for r in ctx.side.get("taiex_hist") or []:
+        got[r[0]] = float(r[4])
+    e = ctx.items.get("taiex") or {}
+    if e.get("status") in ("ok", "conflict") and e.get("asof"):
+        got[e["asof"]] = float(e["v"]["close"])
+    if iso(D) not in got or sum(1 for d in got if d <= iso(D)) < optstruct.RESID_WIN + 2:
+        try:
+            for r in finmind._rows(ctx, "TaiwanStockPrice", "TAIEX", D - dt.timedelta(days=130), D + dt.timedelta(days=1)):
+                got.setdefault(r["date"], float(r["close"]))
+        except Exception:  # noqa: BLE001
+            pass   # 歷史不足只影響波動率殘差與已實現波動率，其餘照算
+    return sorted(got.items())
+
+
+def _opt_struct(ctx):
+    """選擇權籌碼與波動結構：當日與前一交易日的逐履約價行情＋三大法人買賣權分計＋台指 VIX 與加權歷史。"""
+    D, P = ctx.d("tw_last"), ctx.d("tw_prev")
+    # 項目一旦標 ok 當天就不再重算，所以資料日當天 17:30 以前寧可等下一個時段，也不把缺一塊的結果定下來；
+    # 17:30 之後（含盤後總覽的讀穿）才接受不完整的結果
+    now = ctx.now if ctx.now.tzinfo else ctx.now.replace(tzinfo=cal_mod.TZ)
+    early = now < dt.datetime.combine(D, dt.time(17, 30), cal_mod.TZ)
+    cur = taifex.opt_chain(ctx, D)
+    try:
+        prev = taifex.opt_chain(ctx, P)
+    except (NotYet, SourceError):
+        if early:
+            raise NotYet("前一交易日選擇權行情暫時取不到，下一個時段再試") from None
+        prev = None           # 取不到前一日：未平倉增減為空，其餘照算
+    inst = taifex.opt_inst_range(ctx, P, D)
+    vix_rows = taifex.vix_history(ctx, D)
+    if early and not any(r[0] == iso(D) for r in vix_rows):
+        raise NotYet("台指 VIX 當日值尚未取得，下一個時段再試")
+    v = optstruct.calc(cur, prev, inst, D, P, ctx.days, vix_rows, _closes(ctx, D))
+    if v["flow"] is None:
+        raise NotYet("選擇權法人買賣權分計不完整")
+    pc = ctx.items.get("pc_ratio") or {}
+    if pc.get("status") in ("ok", "conflict") and pc.get("asof") == iso(D):
+        v["oi"]["pc_match"] = (pc["v"].get("put_oi") == v["oi"]["put_oi"] and pc["v"].get("call_oi") == v["oi"]["call_oi"])
+    return v, D
+
+
 REG = {
     "taiex": {"FinMind": finmind.taiex, "TWSE": twse.taiex},
     "tpex": {"FinMind": finmind.tpex, "TPEx": tpex.tpex},
@@ -48,6 +96,7 @@ REG = {
     "pc_ratio": {"TAIFEX": taifex.pc_ratio, "derived": _pc_derived},
     "large_traders": {"TAIFEX": taifex.large_traders},
     "vix": {"TAIFEX": taifex.vix},
+    "opt_struct": {"TAIFEX": _opt_struct},
     "margin": {"TWSE": twse.margin, "FinMind": finmind.margin},
     "usd_twd": {"BOT": bot.usd_twd, "FinMind": finmind.usd_twd},
     "us_index": {"FinMind": finmind.us_index},
