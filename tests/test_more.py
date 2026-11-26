@@ -192,6 +192,8 @@ def test_pool_read_allow_prev_reads_previous_daily_digest():
     {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN", "v": {"chg_bn": 1}},  # 缺融資餘額
     {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN",
      "v": {"balance_bn": "4341", "chg_bn": 1, "short_balance": 1, "short_chg": 1}},     # 餘額不是數值
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN",
+     "v": {"balance_bn": float("inf"), "chg_bn": 1, "short_balance": 1, "short_chg": 1}},  # 非有限值
 ])
 def test_pool_read_allow_prev_rejects_bad_daily_entry(bad):
     _, r = _next_day(daily_margin=bad)

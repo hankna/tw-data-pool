@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import subprocess
 import sys
@@ -38,7 +39,8 @@ def _prev_ok(e, tw_prev: str, fields=()):
     """前一交易日的有效值：結構正確、狀態完成、資料日剛好是前一交易日、目錄列的欄位都是數值；否則回傳 None。"""
     if (isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("asof"), str) and e["asof"] == tw_prev
             and isinstance(e.get("src"), str) and isinstance(e.get("v"), dict) and e["v"]
-            and all(isinstance(e["v"].get(f), (int, float)) and not isinstance(e["v"].get(f), bool) for f in fields)):
+            and all(isinstance(e["v"].get(f), (int, float)) and not isinstance(e["v"].get(f), bool)
+                    and math.isfinite(e["v"][f]) for f in fields)):
         return e
     return None
 
