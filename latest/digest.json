@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-26T14:50:33+08:00",
- "snapshot_id": "dcfe5cb9",
+ "generated_at": "2026-11-26T15:22:09+08:00",
+ "snapshot_id": "cfffc3d8",
  "calendar": {
   "tw_last": "2026-11-26",
   "tw_prev": "2026-11-25",
@@ -10,11 +10,19 @@
  },
  "items": {
   "taiex": {
-   "status": "missing",
-   "asof": null,
-   "notes": [
-    "FinMind：SourceError：加權成交金額過小"
-   ]
+   "asof": "2026-11-26",
+   "status": "ok",
+   "src": "FinMind:TaiwanStockPrice",
+   "v": {
+    "open": 38435.99,
+    "high": 39459.95,
+    "low": 38435.99,
+    "close": 39151.81,
+    "chg": 956.38,
+    "chg_pct": 2.5,
+    "turnover_bn": 8376.53
+   },
+   "xcheck": "match"
   },
   "tpex": {
    "asof": "2026-11-26",
@@ -26,8 +34,18 @@
    }
   },
   "inst_spot": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-26",
+   "status": "ok",
+   "src": "TWSE:BFI82U",
+   "v": {
+    "foreign_bn": -491.81,
+    "trust_bn": 230.51,
+    "dealer_bn": 128.65,
+    "dealer_self_bn": 40.03,
+    "dealer_hedge_bn": 88.62,
+    "total_bn": -132.65
+   },
+   "xcheck": "n/a"
   },
   "fut_inst": {
    "status": "pending",
@@ -142,13 +160,20 @@
    }
   },
   "us_yield": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-24",
+   "status": "ok",
+   "src": "FinMind:GovernmentBondsYield",
+   "v": {
+    "y10": 4.91,
+    "y10_chg_bp": -1.0,
+    "y2": 4.63,
+    "y2_chg_bp": 0.0
+   }
   }
  },
  "derived": {
-  "rv20_annual_pct": null,
-  "sigma1_rv_pts": null,
+  "rv20_annual_pct": 63.75,
+  "sigma1_rv_pts": 1572.3,
   "sigma1_vix_pts": null,
   "closes_7": [
    [
@@ -182,14 +207,10 @@
   ]
  },
  "health": {
-  "alert": true,
-  "bad": [
-   "taiex"
-  ],
+  "alert": false,
+  "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": [
-   "taiex：missing"
-  ]
+  "notes": []
  }
 }
