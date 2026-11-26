@@ -525,3 +525,24 @@ def test_official_reference_with_missing_counts_falls_back_to_finmind():
         official = {"status": "ok", "asof": d, "src": "TAIFEX:openapi/PutCallRatio", "v": bad}
         assert dg._oi_reference(_ctx_with({"pc_ratio": official, "txo_oi": fm}), d) == ("FinMind 逐履約價合計", 3, 4)
         assert dg._oi_reference(_ctx_with({"pc_ratio": official}), d) is None
+
+
+# ---------- Codex MROC-178 兩項低等級事項（2026-11-27） ----------
+def test_boolean_counts_are_not_a_valid_reference():
+    from pool import digest as dg
+    d = "2026-11-20"
+    fm = {"status": "ok", "asof": d, "src": "FinMind:TaiwanOptionDaily", "v": {"oi_sum_excl_expiring": {"put": 3, "call": 4}}}
+    official = {"status": "ok", "asof": d, "src": "TAIFEX:openapi/PutCallRatio", "v": {"put_oi": True, "call_oi": 2}}
+    assert dg._oi_reference(_ctx_with({"pc_ratio": official, "txo_oi": fm}), d) == ("FinMind 逐履約價合計", 3, 4)
+    fm_bool = {**fm, "v": {"oi_sum_excl_expiring": {"put": False, "call": 4}}}
+    assert dg._oi_reference(_ctx_with({"pc_ratio": official, "txo_oi": fm_bool}), d) is None
+
+
+def test_unparseable_taiex_date_before_calendar_is_ignored():
+    vix, tai = _weekday_series()
+    d = vix[-1][0]
+    days = [dt.date.fromisoformat(x) for x, _ in tai[-10:]]
+    full = osx.iv_residual(vix, tai, d, days=days)
+    bad = tai[30][0] + "x"                                   # 排序介於兩個交易日之間、無法解析
+    got = osx.iv_residual(vix, tai + [(bad, 1.0)], d, days=days)
+    assert got["n"] + got["dropped"] == full["n"] + full["dropped"] and got["z"] == full["z"]

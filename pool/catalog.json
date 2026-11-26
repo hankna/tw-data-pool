@@ -210,7 +210,7 @@
    "fields": {
     "spec": "opt_struct/1（定義見 docs/OPT_STRUCT.md）",
     "flow": "dealer|trust|foreign|others × call|put：trade_net 當日買−賣口數、oi_net 買方−賣方未平倉口數、oi_net_chg 對前一交易日；others＝三大法人合計的反向（散戶與一般法人）；dealer_opt_net＝自營商買權淨額＋賣權淨額",
-    "oi": "未到期契約的 call_oi、put_oi 與對前一交易日增減 call_chg、put_chg；added＝最近週選與月選各自未平倉增加最多的履約價 [履約價, 增加口數, 未平倉]；pc_match＝合計是否等於 pc_ratio",
+    "oi": "未到期契約的 call_oi、put_oi 與對前一交易日增減 call_chg、put_chg；added＝最近週選與月選各自未平倉增加最多的履約價 [履約價, 增加口數, 未平倉]；pc_match＝合計是否等於獨立來源口數（pc_ref 記錄來源：期交所賣權買權比或 FinMind 逐履約價合計），沒有獨立來源時為空",
     "vol": "front｜month｜next 的價平隱含波動率 iv_atm（%）、遠期價 F、距到期交易日 td；front_minus_month、month_minus_next（百分點）；rr25＝月選 25Δ 賣權 IV − 25Δ 買權 IV；vix、rv20、vrp＝vix−rv20；iv_resid＝台指 VIX 變動扣掉指數漲跌連動後的殘差（resid_pts 點、z 標準化）"
    },
    "note": "盤後事實，不含方向判斷。前一交易日行情取不到時 oi 的增減為空；台指 VIX 或加權歷史不足 30 個交易日時 iv_resid 為空。非關鍵項目，缺漏不觸發警示。"
