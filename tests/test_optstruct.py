@@ -396,3 +396,75 @@ def test_pc_mismatch_is_not_published():
     assert any("不符" in n for n in late["items"]["opt_struct"].get("notes", []))     # 確認是因為口數不符
     early = runmod.run(DropRows(), Store(tempfile.mkdtemp()), cal.parse_now("2026-11-20T16:20:00"), trigger="test")
     assert early["items"]["opt_struct"]["status"] == "pending"
+
+
+
+# ---------- Codex 覆核 #10 的 3 項指正（2026-11-27） ----------
+def _ctx_with(items):
+    from pool.sources import Ctx
+    c = Ctx(http=None, cal={}, now=NOW)
+    c.items.update(items)
+    return c
+
+
+def test_oi_reference_never_uses_same_file_derivation():
+    from pool import digest as dg
+    d = "2026-11-20"
+    official = {"status": "ok", "asof": d, "src": "TAIFEX:openapi/PutCallRatio", "v": {"put_oi": 1, "call_oi": 2}}
+    derived = {"status": "ok", "asof": d, "src": "derived:txo_oi", "v": {"put_oi": 1, "call_oi": 2}}
+    txo_fm = {"status": "ok", "asof": d, "src": "FinMind:TaiwanOptionDaily", "v": {"oi_sum_excl_expiring": {"put": 3, "call": 4}}}
+    txo_tf = {**txo_fm, "src": "TAIFEX:optDataDown"}
+    assert dg._oi_reference(_ctx_with({"pc_ratio": official, "txo_oi": txo_tf}), d) == ("期交所賣權買權比", 1, 2)
+    assert dg._oi_reference(_ctx_with({"pc_ratio": derived, "txo_oi": txo_fm}), d) == ("FinMind 逐履約價合計", 3, 4)
+    # 賣權買權比是自算、逐履約價又來自期交所同一份檔案：沒有獨立來源
+    assert dg._oi_reference(_ctx_with({"pc_ratio": derived, "txo_oi": txo_tf}), d) is None
+    assert dg._oi_reference(_ctx_with({"pc_ratio": {**official, "asof": "2026-11-19"}}), d) is None
+
+
+def test_without_independent_reference_waits_then_publishes_unverified():
+    from pool import calendar as cal
+
+    class NoIndependent(FixtureHttp):
+        """官方賣權買權比沒有當日、FinMind 也失效：pc_ratio 只能自算，txo_oi 只能用期交所同一份檔案。"""
+        def json(self, url, params=None):
+            if url.rstrip("/").endswith("PutCallRatio"):
+                return []
+            return super().json(url, params)
+
+        def finmind(self, dataset, data_id, start, end):
+            if dataset == "TaiwanOptionDaily":
+                from pool.util import SourceError
+                raise SourceError("模擬 FinMind 逐履約價失效")
+            return super().finmind(dataset, data_id, start, end)
+    late = runmod.run(NoIndependent(), Store(tempfile.mkdtemp()), NOW, trigger="test")
+    assert late["items"]["txo_oi"]["src"].startswith("TAIFEX") and late["items"]["pc_ratio"]["src"].startswith("derived")
+    e = late["items"]["opt_struct"]
+    assert e["status"] == "ok" and e["v"]["oi"]["pc_match"] is None and e["v"]["oi"]["pc_ref"] is None
+    early = runmod.run(NoIndependent(), Store(tempfile.mkdtemp()), cal.parse_now("2026-11-20T16:20:00"), trigger="test")
+    assert early["items"]["opt_struct"]["status"] == "pending"
+    full, _ = build()
+    assert full["items"]["opt_struct"]["v"]["oi"]["pc_ref"] == "期交所賣權買權比"
+
+
+def test_weekend_record_inside_calendar_does_not_split_trading_days():
+    vix, tai, days = _series(n=40)
+    d = vix[-1][0]
+    full = osx.iv_residual(vix, tai, d, days=days)
+    # 在倒數第 10 與第 9 個交易日之間塞一筆不在交易日曆上的日期（例如週末的錯誤紀錄）
+    a, b = vix[-10][0], vix[-9][0]
+    extra = a + "x"                                          # 排序介於 a 與 b 之間、但不在交易日曆上的日期
+    assert a < extra < b
+    vix2 = vix + [(extra, vix[-10][1] * 3)]
+    got = osx.iv_residual(vix2, tai, d, days=days)
+    assert got["n"] + got["dropped"] == full["n"] + full["dropped"] and got["z"] == full["z"]
+    # 當日前一天被插入假日期時，當日殘差也照算
+    p_ = vix[-2][0] + "x"
+    assert osx.iv_residual(vix + [(p_, 1.0)], tai, d, days=days)["z"] == full["z"]
+
+
+def test_vix_note_labels_match_the_snapshot_fields():
+    from tests.test_more import pool_read
+    assert pool_read.vix_note({"iv30": 43.32, "diff_pct": -39.57, "suspect": True}).count("30 天價平隱含波動率（43.32%）") == 1
+    old = pool_read.vix_note({"iv_month": 44.83, "diff_pct": -41.6, "suspect": True})
+    assert "月選價平隱含波動率（44.83%）" in old and "30 天" not in old
+    assert pool_read.vix_note({"iv30": 50, "diff_pct": 1, "suspect": False}) is None and pool_read.vix_note(None) is None

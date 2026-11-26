@@ -249,11 +249,16 @@ def _robust_keep(ys):
 
 
 def _trading_set(vix_rows, taiex_rows, days):
-    """判斷「相鄰交易日」用的交易日集合：VIX 日期 ∪ 加權日期 ∪ 交易日曆。任一來源缺某天，該天仍在集合裡，
-    缺漏前後兩天就不會被當成相鄰（Codex #9 指正 3）。"""
-    t = {r[0] for r in vix_rows} | {r[0] for r in taiex_rows}
-    t |= {iso(x) for x in (days or [])}
-    return sorted(t)
+    """判斷「相鄰交易日」用的交易日集合。日曆涵蓋的期間用交易日曆；更早的期間用 VIX 日期 ∪ 加權日期。
+    任一來源缺某天，該天仍在集合裡，缺漏前後兩天就不會被當成相鄰（Codex #9 指正 3）。"""
+    src = {r[0] for r in vix_rows} | {r[0] for r in taiex_rows}
+    cal = sorted(iso(x) for x in (days or []))
+    if not cal:
+        return sorted(src)
+    # 交易日曆涵蓋的期間以日曆為準：來源多出的週末或休市日紀錄不算交易日，不會把真正相鄰的兩天拆開
+    # （Codex #10 指正 2）；日曆涵蓋不到的較早期間，才用來源日期補
+    lo, hi = cal[0], cal[-1]
+    return sorted(set(cal) | {x for x in src if x < lo or x > hi})
 
 
 def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int = RESID_MIN, days=None,

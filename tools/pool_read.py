@@ -187,6 +187,20 @@ def brief_opt_struct(v: dict) -> str:
     return "；".join(parts)
 
 
+def vix_note(chk):
+    """官方 VIX 疑似異常時給報告的備註（2026-11-24 發生過單日跳動，用它推的一日 1σ 會跟著失真）。
+    依快照實際有的欄位標名稱：新版是 30 天價平隱含波動率（iv30），舊快照只有月選（iv_month）（Codex #10 指正 3）。"""
+    if not isinstance(chk, dict) or not chk.get("suspect"):
+        return None
+    if "iv30" in chk:
+        own = f"30 天價平隱含波動率（{chk['iv30']}%）"
+    elif "iv_month" in chk:
+        own = f"月選價平隱含波動率（{chk['iv_month']}%）"
+    else:
+        own = "價平隱含波動率"
+    return f"台指 VIX 疑似異常：官方值與資料池自算的{own}相差 {chk.get('diff_pct', 0):+}%，一日 1σ 請改用 sigma1_rv_pts"
+
+
 class _SeriesReader:
     """讀穿時給來源程式用的序列讀取器（只讀 data 分支的 series/*.csv；讀不到回傳空清單）。"""
 
@@ -365,11 +379,9 @@ def main(argv=None, http=None) -> int:
             derived_via = "direct"
         except Exception as e:  # noqa: BLE001
             notes.append(f"衍生值本機計算失敗：{str(e)[:60]}")
-    chk = (((out_items.get("opt_struct") or {}).get("v") or {}).get("vol") or {}).get("vix_check") or {}
-    if chk.get("suspect"):
-        # 官方 VIX 偶有單日跳動（2026-11-24）。用它推的一日 1σ 會跟著失真，提醒報告改用實際波動版
-        notes.append(f"台指 VIX 疑似異常：官方值與資料池自算的 30 天價平隱含波動率（{chk.get('iv30', chk.get('iv_month'))}%）相差 {chk['diff_pct']:+}%，"
-                     "一日 1σ 請改用 sigma1_rv_pts")
+    vn = vix_note((((out_items.get("opt_struct") or {}).get("v") or {}).get("vol") or {}).get("vix_check"))
+    if vn:
+        notes.append(vn)
     health = dict((digest or {}).get("health") or {"alert": False, "notes": []})
     if "bad" in health:
         # 資料健康（缺漏、衝突）照沿用；digest 裡的時鐘延遲可能是幾小時前的事件，改由 run_log 時間窗重新判斷

@@ -78,17 +78,42 @@ def _opt_struct(ctx):
     v = optstruct.calc(cur, prev, inst, D, P, ctx.days, vix_rows, _closes(ctx, D))
     if v["flow"] is None:
         raise NotYet("選擇權法人買賣權分計不完整")
-    pc = ctx.items.get("pc_ratio") or {}
-    if pc.get("status") in ("ok", "conflict") and pc.get("asof") == iso(D):
-        v["oi"]["pc_match"] = (pc["v"].get("put_oi") == v["oi"]["put_oi"] and pc["v"].get("call_oi") == v["oi"]["call_oi"])
-        if not v["oi"]["pc_match"]:
-            # 逐履約價檔缺列時合計會偏低：不發布（Codex #9 指正 7）。17:30 前等下一個時段，之後標 missing
-            why = (f"未平倉合計（賣權 {v['oi']['put_oi']}、買權 {v['oi']['call_oi']}）與賣權買權比口數"
-                   f"（{pc['v'].get('put_oi')}、{pc['v'].get('call_oi')}）不符")
-            if early:
-                raise NotYet(why)
-            raise SourceError(why)
+    ref = _oi_reference(ctx, iso(D))
+    v["oi"]["pc_ref"] = ref[0] if ref else None
+    if ref is None:
+        # 沒有獨立來源可對帳（官方賣權買權比還沒公布，逐履約價也只有期交所這一份）：17:30 前等下一個時段；
+        # 之後照常發布，但 pc_match 留空，表示未經獨立對帳（Codex #10 指正 1）
+        if early:
+            raise NotYet("未平倉合計暫無獨立來源可對帳，下一個時段再試")
+        v["oi"]["pc_match"] = None
+        return v, D
+    name, put_ref, call_ref = ref
+    v["oi"]["pc_match"] = (put_ref == v["oi"]["put_oi"] and call_ref == v["oi"]["call_oi"])
+    if not v["oi"]["pc_match"]:
+        # 逐履約價檔缺列時合計會偏低：不發布（Codex #9 指正 7）。17:30 前等下一個時段，之後標 missing
+        why = (f"未平倉合計（賣權 {v['oi']['put_oi']}、買權 {v['oi']['call_oi']}）與{name}口數"
+               f"（{put_ref}、{call_ref}）不符")
+        if early:
+            raise NotYet(why)
+        raise SourceError(why)
     return v, D
+
+
+def _oi_reference(ctx, d: str):
+    """未平倉合計的獨立對帳來源：(名稱, 賣權口數, 買權口數) 或 None。
+    只採用和 opt_struct（期交所 optDataDown）不同來源的數字，避免同一份缺列檔案自己比自己（Codex #10 指正 1）：
+    一、期交所 OpenAPI 公布的賣權買權比；二、txo_oi 取自 FinMind 逐履約價時的合計（排除當日到期，定義相同）。
+    pc_ratio 若是由 txo_oi 自算，等同第二項，只在 txo_oi 來自 FinMind 時採用。"""
+    done = ("ok", "conflict")
+    pc = ctx.items.get("pc_ratio") or {}
+    if pc.get("status") in done and pc.get("asof") == d and str(pc.get("src", "")).startswith("TAIFEX:openapi"):
+        return "期交所賣權買權比", pc["v"].get("put_oi"), pc["v"].get("call_oi")
+    t = ctx.items.get("txo_oi") or {}
+    if t.get("status") in done and t.get("asof") == d and str(t.get("src", "")).startswith("FinMind"):
+        s = (t.get("v") or {}).get("oi_sum_excl_expiring") or {}
+        if isinstance(s.get("put"), int) and isinstance(s.get("call"), int):
+            return "FinMind 逐履約價合計", s["put"], s["call"]
+    return None
 
 
 REG = {
