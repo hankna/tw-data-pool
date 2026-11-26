@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-26T21:22:13+08:00",
- "snapshot_id": "e0427173",
+ "generated_at": "2026-11-26T23:29:51+08:00",
+ "snapshot_id": "377feac3",
  "calendar": {
   "tw_last": "2026-11-26",
   "tw_prev": "2026-11-25",
@@ -214,6 +214,216 @@
     "close": 55.18,
     "close_1min_avg": 55.18,
     "chg": -3.2
+   }
+  },
+  "opt_struct": {
+   "asof": "2026-11-26",
+   "status": "ok",
+   "src": "TAIFEX:optDataDown+callsAndPutsDateDown",
+   "v": {
+    "spec": "opt_struct/1",
+    "flow": {
+     "dealer": {
+      "call": {
+       "trade_net": 1466,
+       "oi_long": 36404,
+       "oi_short": 33378,
+       "oi_net": 3026,
+       "oi_net_chg": 1466
+      },
+      "put": {
+       "trade_net": -5491,
+       "oi_long": 15496,
+       "oi_short": 24461,
+       "oi_net": -8965,
+       "oi_net_chg": -5491
+      }
+     },
+     "trust": {
+      "call": {
+       "trade_net": -2010,
+       "oi_long": 13,
+       "oi_short": 24489,
+       "oi_net": -24476,
+       "oi_net_chg": -2010
+      },
+      "put": {
+       "trade_net": 0,
+       "oi_long": 160,
+       "oi_short": 0,
+       "oi_net": 160,
+       "oi_net_chg": 0
+      }
+     },
+     "foreign": {
+      "call": {
+       "trade_net": 1160,
+       "oi_long": 42506,
+       "oi_short": 28287,
+       "oi_net": 14219,
+       "oi_net_chg": 1160
+      },
+      "put": {
+       "trade_net": 522,
+       "oi_long": 17532,
+       "oi_short": 14285,
+       "oi_net": 3247,
+       "oi_net_chg": 522
+      }
+     },
+     "others": {
+      "call": {
+       "trade_net": -616,
+       "oi_net": 7231,
+       "oi_net_chg": -616
+      },
+      "put": {
+       "trade_net": 4969,
+       "oi_net": 5558,
+       "oi_net_chg": 4969
+      }
+     },
+     "dealer_opt_net": -5939
+    },
+    "oi": {
+     "call_oi": 139680,
+     "put_oi": 73367,
+     "call_chg": 49041,
+     "put_chg": 37253,
+     "expiring_today": [],
+     "added": {
+      "202611F4": {
+       "call": [
+        [
+         42000,
+         11649,
+         12554
+        ],
+        [
+         43000,
+         3531,
+         9405
+        ],
+        [
+         42500,
+         2155,
+         2405
+        ]
+       ],
+       "put": [
+        [
+         34000,
+         4175,
+         4499
+        ],
+        [
+         36000,
+         2787,
+         3109
+        ],
+        [
+         35000,
+         2549,
+         2854
+        ]
+       ]
+      },
+      "202612": {
+       "call": [
+        [
+         57300,
+         121,
+         394
+        ],
+        [
+         43800,
+         102,
+         325
+        ],
+        [
+         57400,
+         84,
+         1825
+        ]
+       ],
+       "put": [
+        [
+         25200,
+         570,
+         2421
+        ],
+        [
+         38000,
+         127,
+         450
+        ],
+        [
+         26000,
+         86,
+         421
+        ]
+       ]
+      }
+     },
+     "pc_match": true
+    },
+    "vol": {
+     "front": {
+      "contract": "202612W1",
+      "exp": "2026-12-02",
+      "td": 4,
+      "F": 39370.0,
+      "f_range_bp": 7.6,
+      "atm_strike": 39350,
+      "iv_atm": 61.11
+     },
+     "month": {
+      "contract": "202612",
+      "exp": "2026-12-16",
+      "td": 14,
+      "F": 39490.0,
+      "f_range_bp": 7.6,
+      "atm_strike": 39500,
+      "iv_atm": 55.35
+     },
+     "next": {
+      "contract": "202701",
+      "exp": "2027-01-20",
+      "td": 37,
+      "F": 39610.0,
+      "f_range_bp": 5.0,
+      "atm_strike": 39600,
+      "iv_atm": 47.76
+     },
+     "front_minus_month": 5.76,
+     "month_minus_next": 7.59,
+     "rr25": {
+      "contract": "202612",
+      "put25": 64.03,
+      "call25": 49.82,
+      "rr": 14.21
+     },
+     "vix": 55.18,
+     "rv20": 63.75,
+     "vix_check": {
+      "iv_month": 55.35,
+      "diff_pct": -0.31,
+      "suspect": false
+     },
+     "vrp": -8.57,
+     "iv_resid": {
+      "n": 58,
+      "dropped": 2,
+      "beta": -2.467,
+      "ret_pct": 2.5,
+      "vix_chg_pct": -5.64,
+      "expected_pct": -5.92,
+      "resid_pct": 0.28,
+      "resid_pts": 0.15,
+      "z": 0.05,
+      "unreliable": null
+     }
+    }
    }
   },
   "margin": {

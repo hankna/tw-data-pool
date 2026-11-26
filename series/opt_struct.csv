@@ -1,0 +1,2 @@
+date,iv_front,iv_month,iv_next,rr25,vix,rv20,vrp,resid_pct,resid_z,vix_diff_pct,call_oi_chg,put_oi_chg,dealer_call_trade,dealer_call_net,dealer_put_trade,dealer_put_net,trust_call_trade,trust_call_net,trust_put_trade,trust_put_net,foreign_call_trade,foreign_call_net,foreign_put_trade,foreign_put_net,others_call_trade,others_call_net,others_put_trade,others_put_net
+2026-11-26,61.11,55.35,47.76,14.21,55.18,63.75,-8.57,0.28,0.05,-0.31,49041,37253,1466,3026,-5491,-8965,-2010,-24476,0,160,1160,14219,522,3247,-616,7231,4969,5558
