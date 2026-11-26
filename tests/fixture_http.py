@@ -69,6 +69,11 @@ class FixtureHttp:
         for k in self.off:
             if k in url:
                 raise SourceError(f"{k} 模擬失效")
+        if "optDataDown" in url:      # 樣本只留一般時段的列（gzip）
+            return self._load("taifex_optDataDown_TXO_" + post["queryStartDate"].replace("/", "") + ".csv.gz")
+        if "callsAndPutsDateDown" in url:
+            return self._load("taifex_callsAndPutsDateDown_TXO_" + post["queryStartDate"].replace("/", "") + "_"
+                              + post["queryEndDate"].replace("/", "") + ".csv")
         if "futDataDown" in url:
             return self._load("taifex_futDataDown_TX_" + post["queryStartDate"].replace("/", "") + ".csv")
         if "rate.bot.com.tw/xrt/flcsv/0/" in url:   # 臺灣銀行牌告匯率（樣本只含 USD 一列，遠期欄以 0 表示無報價）

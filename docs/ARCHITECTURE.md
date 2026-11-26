@@ -76,7 +76,7 @@ GitHub Actions（每天 9 次，見第 5 節）
 
 ### 4.2 項目與來源
 
-16 個項目的來源順序、欄位、單位、檢核範圍、預計公布時間全部在 `pool/catalog.json`。重點定義：
+17 個項目的來源順序、欄位、單位、檢核範圍、預計公布時間全部在 `pool/catalog.json`。重點定義：
 
 | 項目 | 主來源 | 備援 | 容易錯的地方 |
 |---|---|---|---|
@@ -88,6 +88,7 @@ GitHub Actions（每天 9 次，見第 5 節）
 | pc_ratio | 期交所 OpenAPI | 由 txo_oi 自算 | 兩者必須相等，當作 txo_oi 的檢核 |
 | large_traders | 期交所 OpenAPI | 期交所 largeTraderFutDown CSV（OpenAPI 晚一天時） | 取 TX、全部月份（OpenAPI 999912、CSV 999999）；2026-11-24 兩來源逐欄相同 |
 | vix | 期交所月檔 | FinMind（需金鑰） | Big5、Tab 分隔 |
+| opt_struct 選擇權籌碼與波動結構 | 期交所 optDataDown（當日與前一交易日）＋callsAndPutsDateDown＋VIX 月檔 | 無 | 2026-11-26 新增，定義見 `docs/OPT_STRUCT.md`；非關鍵項目，只給盤後事實 |
 | margin | 證交所 MI_MARGN | FinMind | 單位仟元與元 |
 | usd_twd | 臺灣銀行牌告匯率 CSV（rate.bot.com.tw/xrt/flcsv/0/日期） | FinMind | 這是臺銀牌告，不是台北外匯經紀收盤價；臺銀一天掛牌多次，當日牌價 16:30 後才收錄（讀穿、強制重抓同樣適用）；回應檔名（ExchangeRate@YYYYMMDDHHMM.csv）缺少或資料日與請求日不符就拒收改走 FinMind；11/20、11/24、11/25 兩來源相同 |
 | us_index、us_stock、us_vix、us_yield | FinMind | 無（報告自行外搜） | 台灣 06:00 後才更新 |
@@ -105,6 +106,7 @@ series/fut_oi.csv                       date,foreign_net_oi,trust_net_oi,dealer_
 series/opt_pc.csv                       date,pc_oi_pct,pc_vol_pct,put_oi,call_oi
 series/vix_daily.csv                    date,close,close_1min_avg
 series/margin_daily.csv                 date,balance_bn,short_balance
+series/opt_struct.csv                   選擇權籌碼與波動結構每日一列（影子期帳本，欄位見 pool/optstruct.py 的 SERIES_COLS）
 series/tw_calendar.csv                  date（交易日；每週更新）
 series/availability.csv                 date,item,first_ok_at,src（最近 60 天）
 logs/run_log.csv                        run_at,trigger,scheduled_for,delay_min,filled,pending,missing,conflict,seconds,note

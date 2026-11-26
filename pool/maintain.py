@@ -47,7 +47,7 @@ def archive_old_years(store: Store, today: dt.date):
     """只追加的 series：每年 1 月把前一年（含）以前的列搬到 series/archive/YYYY/。"""
     if today.month != 1:
         return
-    for name in ("taiex_daily", "inst_daily", "fut_oi", "opt_pc", "vix_daily", "margin_daily"):
+    for name in ("taiex_daily", "inst_daily", "fut_oi", "opt_pc", "vix_daily", "margin_daily", "opt_struct"):
         rows = store.rows(name)
         old = [r for r in rows if parse_date(r["date"]).year < today.year - 1]
         if not old:

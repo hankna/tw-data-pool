@@ -106,6 +106,7 @@ _ZH = [
     ("TAIFEX:openapi/PutCallRatio", lambda s: "期交所 OpenAPI 賣權買權比"),
     ("TAIFEX:openapi/OpenInterestOfLargeTraders", lambda s: "期交所 OpenAPI 大額交易人未沖銷部位"),
     ("TAIFEX:futDataDown", lambda s: "期交所 期貨每日交易行情下載"),
+    ("TAIFEX:optDataDown+callsAndPutsDateDown", lambda s: "期交所 選擇權每日行情與三大法人買賣權分計（資料池計算）"),
     ("TAIFEX:optDataDown", lambda s: "期交所 選擇權每日交易行情下載"),
     ("TAIFEX:file", lambda s: "期交所 臺指選擇權波動率指數每日檔"),
     ("derived:", lambda s: "資料池自算（逐履約價加總，已排除當日到期）"),
@@ -144,9 +145,52 @@ def brief(name: str, e: dict) -> str:
     if name == "opt_inst":
         f = v["foreign"]
         return f"外資 call_net={f['call_net_oi']} put_net={f['put_net_oi']}"
+    if name == "opt_struct":
+        return brief_opt_struct(v)
     if name in ("us_index", "us_stock"):
         return " ".join(f"{k}={x['close']}({x['chg_pct']:+}%)" for k, x in v.items())
     return " ".join(f"{k}={v[k]}" for k in (pick or ()) if k in v)
+
+
+def brief_opt_struct(v: dict) -> str:
+    """選擇權籌碼與波動結構的一行摘要（細項讀 pool.json；定義見 docs/OPT_STRUCT.md）。"""
+    sg = lambda x: "無" if x is None else f"{x:+d}" if isinstance(x, int) else f"{x:+.2f}"   # noqa: E731
+    fl, oi, vol = v.get("flow") or {}, v.get("oi") or {}, v.get("vol") or {}
+    parts = []
+    zh = {"dealer": "自營商", "foreign": "外資", "others": "三大法人以外"}
+    for who in ("dealer", "foreign", "others"):
+        w = fl.get(who)
+        if w:
+            parts.append(f"{zh[who]} 買權淨 {sg(w['call']['oi_net'])}（當日 {sg(w['call']['trade_net'])}）"
+                         f"賣權淨 {sg(w['put']['oi_net'])}（當日 {sg(w['put']['trade_net'])}）")
+    parts.append(f"未平倉增減 買權 {sg(oi.get('call_chg'))} 賣權 {sg(oi.get('put_chg'))}")
+    iv = "／".join(f"{vol[k]['contract']} {vol[k]['iv_atm']}%" for k in ("front", "month", "next") if vol.get(k))
+    if iv:
+        parts.append("價平 IV " + iv)
+    if vol.get("rr25"):
+        parts.append(f"25Δ 風險逆轉 {sg(vol['rr25']['rr'])}")
+    if vol.get("vrp") is not None:
+        parts.append(f"VIX−RV20 {sg(vol['vrp'])}")
+    if vol.get("iv_resid"):
+        parts.append(f"波動率殘差 {sg(vol['iv_resid']['resid_pts'])} 點（z {sg(vol['iv_resid']['z'])}）")
+    return "；".join(parts)
+
+
+class _SeriesReader:
+    """讀穿時給來源程式用的序列讀取器（只讀 data 分支的 series/*.csv；讀不到回傳空清單）。"""
+
+    def __init__(self, data_dir):
+        self.data_dir, self._c = data_dir, {}
+
+    def rows(self, name):
+        if name not in self._c:
+            try:
+                import csv, io
+                self._c[name] = list(csv.DictReader(io.StringIO(
+                    read_data_file(f"series/{name}.csv", self.data_dir).decode("utf-8"))))
+            except Exception:  # noqa: BLE001
+                self._c[name] = []
+        return self._c[name]
 
 
 def main(argv=None, http=None) -> int:
@@ -206,7 +250,7 @@ def main(argv=None, http=None) -> int:
         if age > STALE_HOURS:
             stale = True
             notes.append(f"資料池已過期（{age:.0f} 小時前產生）")
-    ctx = Ctx(http=http, cal=cal, now=now, days=days)
+    ctx = Ctx(http=http, cal=cal, now=now, days=days, series=_SeriesReader(a.data_dir))
     out_items, via_direct, missing, used_prev = {}, [], [], []
     for name in prof["need"]:
         cfg = cat["items"][name]
