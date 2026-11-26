@@ -40,3 +40,4 @@ run_at,trigger,scheduled_for,delay_min,filled,pending,missing,conflict,seconds,n
 2026-11-26T11:30:55+08:00,schedule,2026-11-26T05:12:00+08:00,378.9,0,0,1,0,9.1,recheck=ok;pc_ratio 修訂（rev 1）
 2026-11-26T11:55:05+08:00,schedule,2026-11-26T06:02:00+08:00,353.1,0,0,1,0,0.8,
 2026-11-26T12:16:27+08:00,schedule,2026-11-26T06:32:00+08:00,344.5,0,0,1,0,1.1,
+2026-11-26T13:35:27+08:00,workflow_dispatch,,,0,0,1,0,0.9,
