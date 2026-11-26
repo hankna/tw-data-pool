@@ -107,7 +107,10 @@ def _oi_reference(ctx, d: str):
     done = ("ok", "conflict")
     pc = ctx.items.get("pc_ratio") or {}
     if pc.get("status") in done and pc.get("asof") == d and str(pc.get("src", "")).startswith("TAIFEX:openapi"):
-        return "期交所賣權買權比", pc["v"].get("put_oi"), pc["v"].get("call_oi")
+        pv = pc.get("v") or {}
+        # 口數缺漏的官方資料不能當參照，改用 FinMind，免得把缺值誤判成對帳不符（Codex #10 第 2 回合指正 3）
+        if isinstance(pv.get("put_oi"), int) and isinstance(pv.get("call_oi"), int):
+            return "期交所賣權買權比", pv["put_oi"], pv["call_oi"]
     t = ctx.items.get("txo_oi") or {}
     if t.get("status") in done and t.get("asof") == d and str(t.get("src", "")).startswith("FinMind"):
         s = (t.get("v") or {}).get("oi_sum_excl_expiring") or {}

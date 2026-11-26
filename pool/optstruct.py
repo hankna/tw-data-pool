@@ -251,7 +251,9 @@ def _robust_keep(ys):
 def _trading_set(vix_rows, taiex_rows, days):
     """判斷「相鄰交易日」用的交易日集合。日曆涵蓋的期間用交易日曆；更早的期間用 VIX 日期 ∪ 加權日期。
     任一來源缺某天，該天仍在集合裡，缺漏前後兩天就不會被當成相鄰（Codex #9 指正 3）。"""
-    src = {r[0] for r in vix_rows} | {r[0] for r in taiex_rows}
+    # 日曆涵蓋不到的期間：加權指數只在交易日公布，日期一律採用；VIX 只採平日的日期，
+    # 週末的錯誤紀錄不算交易日，不會把週五與週一拆開（Codex #10 第 2 回合指正 1）
+    src = {r[0] for r in taiex_rows} | {r[0] for r in vix_rows if _weekday(r[0])}
     cal = sorted(iso(x) for x in (days or []))
     if not cal:
         return sorted(src)
@@ -261,11 +263,19 @@ def _trading_set(vix_rows, taiex_rows, days):
     return sorted(set(cal) | {x for x in src if x < lo or x > hi})
 
 
+def _weekday(x: str) -> bool:
+    """週一到週五為 True；無法解析的日期字串視為非交易日。"""
+    try:
+        return dt.date.fromisoformat(x).weekday() < 5
+    except (TypeError, ValueError):
+        return False
+
+
 def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int = RESID_MIN, days=None,
                 prev_suspect=None):
     """台指 VIX 當日變動扣掉「指數漲跌能解釋的部分」之後的殘差。
     作法：y＝100×ln(VIX_t÷VIX_{t−1})，x＝加權指數當日報酬 %；只用「相鄰交易日」兩端都有值的觀測（缺一天就跳過，
-    不把兩天的變動當一天）；用 d 之前 win 個觀測做最小平方法（不含 d，防前視），殘差＝y_d −（a＋b×x_d），
+    不把兩天的變動當一天）；用 d 之前最近 win 個交易日內的觀測做最小平方法（不含 d，防前視；缺值日占名額、不往前補），殘差＝y_d −（a＋b×x_d），
     z＝殘差÷視窗內殘差標準差。殘差只表示 VIX 實際變動比指數漲跌推算的變動高或低，不代表 VIX 本身漲跌，也不代表誰在買賣。
     官方 VIX 偶有單日跳動（2026-11-24 公布 26.18，前後兩日為 55.36、58.38）：視窗內 y 偏離中位數超過
     RESID_MAD_K 個穩健標準差的日子不進迴歸（dropped 記錄剔除幾天）。
@@ -283,7 +293,11 @@ def iv_residual(vix_rows, taiex_rows, d: str, win: int = RESID_WIN, min_n: int =
             obs.append((b, (c[b] / c[a] - 1) * 100, 100 * math.log(v[b] / v[a])))
     if not obs or obs[-1][0] != d:
         return None                                  # 前一交易日缺 VIX 或加權：當日沒有可比的基準
-    today, raw = obs[-1], obs[:-1][-win:]
+    # 視窗是 d 之前最近 win 個「交易日」，不是最近 win 筆有效觀測：缺值的日子占掉視窗名額，
+    # 不往更早的資料補，有效觀測不足 min_n 就不發布（Codex #10 第 2 回合指正 2）
+    i = T.index(d)
+    win_days = set(T[max(0, i - win):i])
+    today, raw = obs[-1], [o for o in obs[:-1] if o[0] in win_days]
     if len(raw) < min_n:
         return None
     med, rsd = _robust_keep([o[2] for o in raw])

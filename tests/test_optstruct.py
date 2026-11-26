@@ -468,3 +468,60 @@ def test_vix_note_labels_match_the_snapshot_fields():
     old = pool_read.vix_note({"iv_month": 44.83, "diff_pct": -41.6, "suspect": True})
     assert "月選價平隱含波動率（44.83%）" in old and "30 天" not in old
     assert pool_read.vix_note({"iv30": 50, "diff_pct": 1, "suspect": False}) is None and pool_read.vix_note(None) is None
+
+
+# ---------- Codex 覆核 #10 第 2 回合的 3 項指正（2026-11-27） ----------
+def _weekday_series(n=80, seed=5):
+    """只含平日的合成序列，日期與真實交易日的週末間隔一致。"""
+    rnd_ = random.Random(seed)
+    d, c, v = dt.date(2026, 3, 2), 40000.0, 30.0          # 週一
+    tai, vix = [(d.isoformat(), c)], [(d.isoformat(), v)]
+    while len(tai) <= n:
+        d += dt.timedelta(days=1)
+        if d.weekday() >= 5:
+            continue
+        r, e = rnd_.gauss(0, 1.5), rnd_.gauss(0, 2.0)
+        c *= 1 + r / 100
+        v *= math.exp((-3.0 * r + e) / 100)
+        tai.append((d.isoformat(), c))
+        vix.append((d.isoformat(), v))
+    return vix, tai
+
+
+def test_weekend_vix_record_before_calendar_does_not_split_friday_and_monday():
+    vix, tai = _weekday_series()
+    d = vix[-1][0]
+    days = [dt.date.fromisoformat(x) for x, _ in tai[-10:]]  # 交易日曆只涵蓋最後 10 天
+    full = osx.iv_residual(vix, tai, d, days=days)
+    # 在日曆涵蓋範圍之前的一個週末塞一筆 VIX 錯誤紀錄
+    fri = next(x for x, _ in tai[20:] if dt.date.fromisoformat(x).weekday() == 4)
+    sat = (dt.date.fromisoformat(fri) + dt.timedelta(days=1)).isoformat()
+    got = osx.iv_residual(vix + [(sat, 99.0)], tai, d, days=days)
+    assert got["n"] + got["dropped"] == full["n"] + full["dropped"] and got["z"] == full["z"]
+    # 沒有交易日曆時也一樣
+    assert osx.iv_residual(vix + [(sat, 99.0)], tai, d) == osx.iv_residual(vix, tai, d)
+
+
+def test_residual_window_is_sixty_trading_days_not_sixty_valid_observations():
+    vix, tai = _weekday_series(n=120)                       # 歷史夠長：舊寫法會往更早的資料補滿 60 筆
+    d = vix[-1][0]
+    full = osx.iv_residual(vix, tai, d)
+    assert full["n"] + full["dropped"] == 60
+    # 最近 60 個交易日中挖掉 VIX 的 15 天（每挖一天少 2 筆觀測）：不往更早的資料補
+    holes = {vix[-k][0] for k in range(5, 50, 3)}
+    holey = [r for r in vix if r[0] not in holes]
+    got = osx.iv_residual(holey, tai, d)
+    assert got is None or got["n"] + got["dropped"] < 60
+    # 有效觀測不足 30 筆：不發布
+    holes = {vix[-k][0] for k in range(3, 60, 2)}
+    assert osx.iv_residual([r for r in vix if r[0] not in holes], tai, d) is None
+
+
+def test_official_reference_with_missing_counts_falls_back_to_finmind():
+    from pool import digest as dg
+    d = "2026-11-20"
+    fm = {"status": "ok", "asof": d, "src": "FinMind:TaiwanOptionDaily", "v": {"oi_sum_excl_expiring": {"put": 3, "call": 4}}}
+    for bad in ({"put_oi": None, "call_oi": 2}, {"put_oi": 1}, {}):
+        official = {"status": "ok", "asof": d, "src": "TAIFEX:openapi/PutCallRatio", "v": bad}
+        assert dg._oi_reference(_ctx_with({"pc_ratio": official, "txo_oi": fm}), d) == ("FinMind 逐履約價合計", 3, 4)
+        assert dg._oi_reference(_ctx_with({"pc_ratio": official}), d) is None
