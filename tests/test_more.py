@@ -189,6 +189,9 @@ def test_pool_read_allow_prev_reads_previous_daily_digest():
     ["not", "a", "dict"],
     {"status": "ok", "asof": "2026-11-20", "src": ["TWSE"], "v": {"balance_bn": 1}},   # src 型別不符
     {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN"},                     # 缺 v
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN", "v": {"chg_bn": 1}},  # 缺融資餘額
+    {"status": "ok", "asof": "2026-11-20", "src": "TWSE:MI_MARGN",
+     "v": {"balance_bn": "4341", "chg_bn": 1, "short_balance": 1, "short_chg": 1}},     # 餘額不是數值
 ])
 def test_pool_read_allow_prev_rejects_bad_daily_entry(bad):
     _, r = _next_day(daily_margin=bad)
@@ -198,7 +201,8 @@ def test_pool_read_allow_prev_rejects_bad_daily_entry(bad):
 def test_pool_read_allow_prev_misdated_latest_falls_to_daily():
     # latest 有已完成但資料日錯位的值：不能採用，要改用 daily 的前一交易日值
     prev, r = _next_day(latest_margin={"status": "ok", "asof": "2026-11-19", "src": "TWSE:MI_MARGN",
-                                       "v": {"balance_bn": 9999}})
+                                       "v": {"balance_bn": 9999, "chg_bn": 1, "short_balance": 1,
+                                             "short_chg": 1}})
     assert r["items"]["margin"]["asof"] == "2026-11-20" and r["items"]["margin"]["v"] == prev["v"]
 
 

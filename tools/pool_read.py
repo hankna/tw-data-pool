@@ -34,10 +34,11 @@ def _sh(cmd, cwd=None, timeout=60):
     return r.stdout
 
 
-def _prev_ok(e, tw_prev: str):
-    """前一交易日的有效值：結構正確、狀態完成、資料日剛好是前一交易日；否則回傳 None。"""
+def _prev_ok(e, tw_prev: str, fields=()):
+    """前一交易日的有效值：結構正確、狀態完成、資料日剛好是前一交易日、目錄列的欄位都是數值；否則回傳 None。"""
     if (isinstance(e, dict) and e.get("status") in DONE and isinstance(e.get("asof"), str) and e["asof"] == tw_prev
-            and isinstance(e.get("src"), str) and isinstance(e.get("v"), dict) and e["v"]):
+            and isinstance(e.get("src"), str) and isinstance(e.get("v"), dict) and e["v"]
+            and all(isinstance(e["v"].get(f), (int, float)) and not isinstance(e["v"].get(f), bool) for f in fields)):
         return e
     return None
 
@@ -217,11 +218,12 @@ def main(argv=None, http=None) -> int:
         if name in prof.get("allow_prev", []) and not stale:
             # latest 在新交易日開盤後就把今日改成 pending，前一日的值只留在 daily/{前一交易日}/digest.json；
             # 兩條路都只接受資料日剛好是前一交易日的有效值，不拿更舊或錯位的資料
-            prev = _prev_ok(e, cal["tw_prev"])
+            prev = _prev_ok(e, cal["tw_prev"], cfg.get("fields", {}))
             if prev is None:
                 try:
                     pd = json.loads(read_data_file(f"daily/{cal['tw_prev']}/digest.json", a.data_dir).decode("utf-8"))
-                    prev = _prev_ok(pd.get("items", {}).get(name) if isinstance(pd, dict) else None, cal["tw_prev"])
+                    prev = _prev_ok(pd.get("items", {}).get(name) if isinstance(pd, dict) else None, cal["tw_prev"],
+                                    cfg.get("fields", {}))
                 except Exception:  # noqa: BLE001
                     prev = None   # 留存不存在、損毀或結構不符：照舊走讀穿／列缺
             if prev:
