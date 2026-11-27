@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-27T17:32:09+08:00",
- "snapshot_id": "b36d203b",
+ "generated_at": "2026-11-27T21:22:08+08:00",
+ "snapshot_id": "e755ec62",
  "calendar": {
   "tw_last": "2026-11-27",
   "tw_prev": "2026-11-26",
@@ -432,8 +432,16 @@
    }
   },
   "margin": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "TWSE:MI_MARGN",
+   "v": {
+    "balance_bn": 4301.72,
+    "chg_bn": -43.12,
+    "short_balance": 184790,
+    "short_chg": 11169
+   },
+   "xcheck": "match"
   },
   "usd_twd": {
    "asof": "2026-11-27",

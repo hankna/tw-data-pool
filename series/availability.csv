@@ -83,6 +83,7 @@ date,item,first_ok_at,src
 2026-11-27,fut_inst,2026-11-27T16:17:08+08:00,FinMind:TaiwanFuturesInstitutionalInvestors
 2026-11-27,inst_spot,2026-11-27T15:22:08+08:00,TWSE:BFI82U
 2026-11-27,large_traders,2026-11-27T17:32:09+08:00,TAIFEX:largeTraderFutDown（CSV 備援，OpenAPI 尚未更新到目標日）
+2026-11-27,margin,2026-11-27T21:22:08+08:00,TWSE:MI_MARGN
 2026-11-27,opt_inst,2026-11-27T16:17:08+08:00,FinMind:TaiwanOptionInstitutionalInvestors
 2026-11-27,opt_struct,2026-11-27T16:17:08+08:00,TAIFEX:optDataDown+callsAndPutsDateDown
 2026-11-27,pc_ratio,2026-11-27T16:17:08+08:00,derived:txo_oi（排除當日到期）
