@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-27T16:17:08+08:00",
- "snapshot_id": "79265d73",
+ "generated_at": "2026-11-27T17:32:09+08:00",
+ "snapshot_id": "b36d203b",
  "calendar": {
   "tw_last": "2026-11-27",
   "tw_prev": "2026-11-26",
@@ -188,8 +188,25 @@
    }
   },
   "large_traders": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "TAIFEX:largeTraderFutDown（CSV 備援，OpenAPI 尚未更新到目標日）",
+   "v": {
+    "scope": "TX+MTX/4 全部月份",
+    "all": {
+     "top5_buy": 98919,
+     "top5_sell": 65732,
+     "top10_buy": 110344,
+     "top10_sell": 97154
+    },
+    "specific": {
+     "top5_buy": 98919,
+     "top5_sell": 65732,
+     "top10_buy": 108088,
+     "top10_sell": 97154
+    },
+    "market_oi": 140027
+   }
   },
   "vix": {
    "asof": "2026-11-27",
@@ -419,8 +436,15 @@
    "asof": null
   },
   "usd_twd": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:TaiwanExchangeRate",
+   "v": {
+    "spot_buy": 32.91,
+    "spot_sell": 33.01,
+    "mid": 32.96
+   },
+   "label": "臺灣銀行牌告即期匯率"
   },
   "tx_night": {
    "asof": "2026-11-27",
