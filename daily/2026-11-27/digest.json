@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-27T15:22:08+08:00",
- "snapshot_id": "3102d7c8",
+ "generated_at": "2026-11-27T16:17:08+08:00",
+ "snapshot_id": "79265d73",
  "calendar": {
   "tw_last": "2026-11-27",
   "tw_prev": "2026-11-26",
@@ -48,36 +48,371 @@
    "xcheck": "match"
   },
   "fut_inst": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:TaiwanFuturesInstitutionalInvestors",
+   "v": {
+    "foreign": {
+     "net_oi": -107503,
+     "chg": -1228
+    },
+    "trust": {
+     "net_oi": 104355,
+     "chg": -565
+    },
+    "dealer": {
+     "net_oi": -3566,
+     "chg": -1156
+    }
+   },
+   "xcheck": "n/a"
   },
   "opt_inst": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:TaiwanOptionInstitutionalInvestors",
+   "v": {
+    "foreign": {
+     "call_net_oi": 13016,
+     "call_net_oi_amt_k": 1035828,
+     "put_net_oi": 3661,
+     "put_net_oi_amt_k": 287045
+    }
+   }
   },
   "tx_day": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "TAIFEX:futDataDown",
+   "v": {
+    "contract": "202612",
+    "open": 39525.0,
+    "high": 39652.0,
+    "low": 39050.0,
+    "close": 39363.0,
+    "settle": 39350.0,
+    "chg": -129.0,
+    "volume": 59337,
+    "oi": 130539,
+    "basis": 54.92
+   }
   },
   "txo_oi": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:TaiwanOptionDaily",
+   "v": {
+    "expiring_today": [
+     "202611F4"
+    ],
+    "monthly": "202612",
+    "weekly": "202612W1",
+    "top": {
+     "202612": {
+      "call": [
+       [
+        50000,
+        2429
+       ],
+       [
+        57400,
+        1857
+       ],
+       [
+        49000,
+        1705
+       ]
+      ],
+      "put": [
+       [
+        49800,
+        3399
+       ],
+       [
+        25200,
+        2814
+       ],
+       [
+        28000,
+        1251
+       ]
+      ]
+     },
+     "202612W1": {
+      "call": [
+       [
+        38800,
+        3611
+       ],
+       [
+        38700,
+        3606
+       ],
+       [
+        38900,
+        3605
+       ]
+      ],
+      "put": [
+       [
+        32400,
+        1575
+       ],
+       [
+        35000,
+        786
+       ],
+       [
+        36000,
+        569
+       ]
+      ]
+     }
+    },
+    "oi_sum_excl_expiring": {
+     "call": 85100,
+     "put": 39714
+    }
+   },
+   "xcheck": "n/a"
   },
   "pc_ratio": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "derived:txo_oi（排除當日到期）",
+   "v": {
+    "oi_pct": 46.67,
+    "vol_pct": null,
+    "put_oi": 39714,
+    "call_oi": 85100
+   }
   },
   "large_traders": {
    "status": "pending",
    "asof": null
   },
   "vix": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "TAIFEX:file/Dailydownload/vix/log2data/{YYYYMM}new.txt",
+   "v": {
+    "close": 51.94,
+    "close_1min_avg": 51.93,
+    "chg": -3.24
+   }
   },
   "opt_struct": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "TAIFEX:optDataDown+callsAndPutsDateDown",
+   "v": {
+    "spec": "opt_struct/1",
+    "flow": {
+     "dealer": {
+      "call": {
+       "trade_net": -4900,
+       "oi_long": 28764,
+       "oi_short": 21976,
+       "oi_net": 6788,
+       "oi_net_chg": 3762
+      },
+      "put": {
+       "trade_net": -10874,
+       "oi_long": 12838,
+       "oi_short": 16051,
+       "oi_net": -3213,
+       "oi_net_chg": 5752
+      }
+     },
+     "trust": {
+      "call": {
+       "trade_net": -20980,
+       "oi_long": 13,
+       "oi_short": 28198,
+       "oi_net": -28185,
+       "oi_net_chg": -3709
+      },
+      "put": {
+       "trade_net": 0,
+       "oi_long": 160,
+       "oi_short": 0,
+       "oi_net": 160,
+       "oi_net_chg": 0
+      }
+     },
+     "foreign": {
+      "call": {
+       "trade_net": 8104,
+       "oi_long": 32668,
+       "oi_short": 19652,
+       "oi_net": 13016,
+       "oi_net_chg": -1203
+      },
+      "put": {
+       "trade_net": 1361,
+       "oi_long": 13210,
+       "oi_short": 9549,
+       "oi_net": 3661,
+       "oi_net_chg": 414
+      }
+     },
+     "others": {
+      "call": {
+       "trade_net": 17776,
+       "oi_net": 8381,
+       "oi_net_chg": 1150
+      },
+      "put": {
+       "trade_net": 9513,
+       "oi_net": -608,
+       "oi_net_chg": -6166
+      }
+     },
+     "dealer_opt_net": 3575
+    },
+    "oi": {
+     "call_oi": 85100,
+     "put_oi": 39714,
+     "call_chg": 28448,
+     "put_chg": 8587,
+     "expiring_today": [
+      "202611F4"
+     ],
+     "added": {
+      "202612W1": {
+       "call": [
+        [
+         38800,
+         3601,
+         3611
+        ],
+        [
+         38900,
+         3599,
+         3605
+        ],
+        [
+         38700,
+         3596,
+         3606
+        ]
+       ],
+       "put": [
+        [
+         32400,
+         1196,
+         1575
+        ],
+        [
+         35000,
+         653,
+         786
+        ],
+        [
+         36000,
+         458,
+         569
+        ]
+       ]
+      },
+      "202612": {
+       "call": [
+        [
+         41600,
+         126,
+         171
+        ],
+        [
+         50000,
+         50,
+         2429
+        ],
+        [
+         41000,
+         41,
+         456
+        ]
+       ],
+       "put": [
+        [
+         25200,
+         393,
+         2814
+        ],
+        [
+         37500,
+         192,
+         251
+        ],
+        [
+         30000,
+         187,
+         1232
+        ]
+       ]
+      }
+     },
+     "pc_ref": "FinMind 逐履約價合計",
+     "pc_match": true
+    },
+    "vol": {
+     "front": {
+      "contract": "202612W1",
+      "exp": "2026-12-02",
+      "td": 3,
+      "F": 39240.0,
+      "f_range_bp": 5.1,
+      "atm_strike": 39250,
+      "iv_atm": 48.3
+     },
+     "month": {
+      "contract": "202612",
+      "exp": "2026-12-16",
+      "td": 13,
+      "F": 39360.0,
+      "f_range_bp": 7.6,
+      "atm_strike": 39400,
+      "iv_atm": 51.78
+     },
+     "next": {
+      "contract": "202701",
+      "exp": "2027-01-20",
+      "td": 36,
+      "F": 39470.0,
+      "f_range_bp": 0.0,
+      "atm_strike": 39500,
+      "iv_atm": 45.53
+     },
+     "front_minus_month": -3.48,
+     "month_minus_next": 6.25,
+     "rr25": {
+      "contract": "202612",
+      "put25": 58.44,
+      "call25": 48.08,
+      "rr": 10.36
+     },
+     "vix": 51.94,
+     "rv20": 63.54,
+     "vix_check": {
+      "iv30": 48.34,
+      "diff_pct": 7.44,
+      "suspect": false
+     },
+     "vrp": -11.6,
+     "iv_resid": {
+      "n": 58,
+      "dropped": 2,
+      "beta": -2.452,
+      "ret_pct": 0.4,
+      "vix_chg_pct": -6.05,
+      "expected_pct": -0.62,
+      "resid_pct": -5.43,
+      "resid_pts": -2.9,
+      "z": -1.0,
+      "unreliable": null
+     }
+    }
+   }
   },
   "margin": {
    "status": "pending",
@@ -178,7 +513,7 @@
  "derived": {
   "rv20_annual_pct": 63.54,
   "sigma1_rv_pts": 1573.3,
-  "sigma1_vix_pts": null,
+  "sigma1_vix_pts": 1286.1,
   "closes_7": [
    [
     "2026-11-19",
