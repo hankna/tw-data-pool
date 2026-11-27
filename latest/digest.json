@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-27T14:12:08+08:00",
- "snapshot_id": "dd83fef8",
+ "generated_at": "2026-11-27T15:22:08+08:00",
+ "snapshot_id": "3102d7c8",
  "calendar": {
   "tw_last": "2026-11-27",
   "tw_prev": "2026-11-26",
@@ -10,19 +10,42 @@
  },
  "items": {
   "taiex": {
-   "status": "missing",
-   "asof": null,
-   "notes": [
-    "FinMind：SourceError：加權成交金額過小"
-   ]
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:TaiwanStockPrice",
+   "v": {
+    "open": 39168.57,
+    "high": 39495.41,
+    "low": 38890.53,
+    "close": 39308.08,
+    "chg": 156.27,
+    "chg_pct": 0.4,
+    "turnover_bn": 6816.1
+   },
+   "xcheck": "match"
   },
   "tpex": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:TaiwanStockPrice",
+   "v": {
+    "close": 285.77,
+    "chg_pct": -1.4
+   }
   },
   "inst_spot": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "TWSE:BFI82U",
+   "v": {
+    "foreign_bn": -296.28,
+    "trust_bn": 85.19,
+    "dealer_bn": -1.95,
+    "dealer_self_bn": 20.32,
+    "dealer_hedge_bn": -22.27,
+    "total_bn": -213.04
+   },
+   "xcheck": "match"
   },
   "fut_inst": {
    "status": "pending",
@@ -153,8 +176,8 @@
   }
  },
  "derived": {
-  "rv20_annual_pct": null,
-  "sigma1_rv_pts": null,
+  "rv20_annual_pct": 63.54,
+  "sigma1_rv_pts": 1573.3,
   "sigma1_vix_pts": null,
   "closes_7": [
    [
@@ -188,14 +211,10 @@
   ]
  },
  "health": {
-  "alert": true,
-  "bad": [
-   "taiex"
-  ],
+  "alert": false,
+  "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": [
-   "taiex：missing"
-  ]
+  "notes": []
  }
 }
