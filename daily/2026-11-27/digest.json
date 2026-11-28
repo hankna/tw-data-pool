@@ -1,6 +1,6 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-28T11:15:35+08:00",
+ "generated_at": "2026-11-28T11:42:01+08:00",
  "snapshot_id": "f4268856",
  "calendar": {
   "tw_last": "2026-11-27",
@@ -582,8 +582,6 @@
   "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": [
-   "pc_ratio 修訂（rev 1）"
-  ]
+  "notes": []
  }
 }
