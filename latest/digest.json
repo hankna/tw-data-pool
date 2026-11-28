@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-28T06:02:08+08:00",
- "snapshot_id": "13a96ef5",
+ "generated_at": "2026-11-28T11:15:35+08:00",
+ "snapshot_id": "f4268856",
  "calendar": {
   "tw_last": "2026-11-27",
   "tw_prev": "2026-11-26",
@@ -52,22 +52,22 @@
   "fut_inst": {
    "asof": "2026-11-27",
    "status": "ok",
-   "src": "FinMind:TaiwanFuturesInstitutionalInvestors",
+   "src": "TAIFEX:openapi/MarketDataOfMajorInstitutionalTradersDetailsOfFuturesContractsBytheDate",
    "v": {
-    "foreign": {
-     "net_oi": -107503,
-     "chg": -1228
+    "dealer": {
+     "net_oi": -3566,
+     "chg": -1156
     },
     "trust": {
      "net_oi": 104355,
      "chg": -565
     },
-    "dealer": {
-     "net_oi": -3566,
-     "chg": -1156
+    "foreign": {
+     "net_oi": -107503,
+     "chg": -1228
     }
    },
-   "xcheck": "n/a",
+   "xcheck": "match",
    "rev": 0
   },
   "opt_inst": {
@@ -177,20 +177,20 @@
      "put": 39714
     }
    },
-   "xcheck": "n/a",
+   "xcheck": "match",
    "rev": 0
   },
   "pc_ratio": {
    "asof": "2026-11-27",
    "status": "ok",
-   "src": "derived:txo_oi（排除當日到期）",
+   "src": "TAIFEX:openapi/PutCallRatio",
    "v": {
     "oi_pct": 46.67,
-    "vol_pct": null,
+    "vol_pct": 82.07,
     "put_oi": 39714,
     "call_oi": 85100
    },
-   "rev": 0
+   "rev": 1
   },
   "large_traders": {
    "asof": "2026-11-27",
@@ -479,16 +479,63 @@
    }
   },
   "us_index": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "^GSPC": {
+     "close": 7297.49,
+     "chg_pct": 1.6
+    },
+    "^IXIC": {
+     "close": 24129.5,
+     "chg_pct": 2.31
+    },
+    "^DJI": {
+     "close": 50774.94,
+     "chg_pct": 1.18
+    },
+    "^SOX": {
+     "close": 9186.71,
+     "chg_pct": 4.69
+    }
+   }
   },
   "us_stock": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "NVDA": {
+     "close": 150.49,
+     "chg_pct": 0.8
+    },
+    "TSM": {
+     "close": 353.34,
+     "chg_pct": 3.21
+    },
+    "AMD": {
+     "close": 424.54,
+     "chg_pct": 4.56
+    },
+    "AVGO": {
+     "close": 312.34,
+     "chg_pct": 3.82
+    },
+    "MU": {
+     "close": 646.95,
+     "chg_pct": 7.6
+    }
+   }
   },
   "us_vix": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-27",
+   "status": "ok",
+   "src": "FinMind:USStockPrice",
+   "v": {
+    "close": 23.81,
+    "chg": -4.48
+   }
   },
   "us_yield": {
    "status": "pending",
@@ -535,6 +582,8 @@
   "bad": [],
   "clock_late": false,
   "token": "valid",
-  "notes": []
+  "notes": [
+   "pc_ratio 修訂（rev 1）"
+  ]
  }
 }
