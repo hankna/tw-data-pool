@@ -1,7 +1,7 @@
 {
  "schema": "tw-data-pool/2",
- "generated_at": "2026-11-28T11:42:01+08:00",
- "snapshot_id": "f4268856",
+ "generated_at": "2026-11-28T18:36:42+08:00",
+ "snapshot_id": "e606004a",
  "calendar": {
   "tw_last": "2026-11-27",
   "tw_prev": "2026-11-26",
@@ -538,8 +538,15 @@
    }
   },
   "us_yield": {
-   "status": "pending",
-   "asof": null
+   "asof": "2026-11-25",
+   "status": "ok",
+   "src": "FinMind:GovernmentBondsYield",
+   "v": {
+    "y10": 4.85,
+    "y10_chg_bp": -6.0,
+    "y2": 4.61,
+    "y2_chg_bp": -2.0
+   }
   }
  },
  "derived": {
